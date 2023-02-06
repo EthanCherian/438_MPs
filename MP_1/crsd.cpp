@@ -47,8 +47,8 @@ struct sockaddr_in initializeSocket(int sockfd, int portno) {
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_family = INADDR_ANY;
     address.sin_port = htons(portno);
-    LOG(INFO) << sockfd << " " << portno;
-    if (bind(sockfd, (struct sockaddr*) &address, sizeof(address) < 0)) {
+    // LOG(INFO) << sockfd << " " << portno;
+    if (bind(sockfd, (struct sockaddr*) &address, sizeof(address)) < 0) {
         LOG(ERROR) << "Failed to bind";
         exit(EXIT_FAILURE);
     }
