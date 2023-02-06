@@ -16,14 +16,14 @@
 using std::string; using std::unordered_map; using std::vector;
 
 // https://www.geeksforgeeks.org/socket-programming-in-cc-handling-multiple-clients-on-server-without-multi-threading/
-unordered_map<string, struct Chatroom> chatrooms;
+unordered_map<string, struct Chatroom*> chatrooms;
 int NEXTPORT;
 
 struct Chatroom {
-    int portNum, status;
+    int portNum, sockfd, status;
     vector<int> connections;            // sockets of all connections
     Chatroom(int p) : portNum(p), status(1) {}
-    Chatroom(int p, int s) : portNum(p), status(s) {}
+    Chatroom(int p, int s) : portNum(p), sockfd(s), status(1) {}
 };
 
 void splitBySpace(string sentence, vector<string>& words) {
@@ -40,14 +40,8 @@ void splitBySpace(string sentence, vector<string>& words) {
     }
 }
 
-int initializeSocket(int portno) {
+struct sockaddr_in initializeSocket(int sockfd, int portno) {
     // initialize socket connection, return file descriptor
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-        LOG(ERROR) << "Failed to create socket";
-        exit(EXIT_FAILURE);
-    }
-
     struct sockaddr_in server_address;
     memset((char*) &server_address, 0, sizeof(struct sockaddr_in));
     server_address.sin_addr.s_addr = INADDR_ANY;
@@ -60,26 +54,29 @@ int initializeSocket(int portno) {
 
     // listen for messages on the socket
     listen(sockfd, 5);
-    // return server_address;
-    return sockfd;
+    return server_address;
 }
 
 void chatroomFunction(string roomname, int portno) {
-    int sockfd = initializeSocket(portno);
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         LOG(ERROR) << "  (chatroom) failed to initialize socket";
         exit(EXIT_FAILURE);
     }
 
-    chatrooms.emplace(roomname, Chatroom(portno));      // add chatroom to map
+    struct sockaddr_in address = initializeSocket(sockfd, portno);
 
+    Chatroom newRoom = Chatroom(portno, sockfd);
+    chatrooms.emplace(roomname, &newRoom);      // add chatroom to map
+
+    int newsockfd;
     while (true) {
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(sockfd, &readfds);
 
         int maxsockfd = sockfd;
-        for (int fd : chatrooms[roomname].connections) {
+        for (int fd : chatrooms[roomname]->connections) {
             FD_SET(fd, &readfds);
             maxsockfd = std::max(maxsockfd, fd);
         }
@@ -90,7 +87,16 @@ void chatroomFunction(string roomname, int portno) {
         }
 
         if (FD_ISSET(sockfd, &readfds)) {
-            accept(sockfd, )
+            socklen_t addrlen = sizeof(address);
+            newsockfd = accept(sockfd, (struct sockaddr*) &address, &addrlen);
+            if (newsockfd < 0) {
+                LOG(ERROR) << "  (chatroom) failed to accept incoming connection";
+                exit(EXIT_FAILURE);
+            }
+            chatrooms[roomname]->connections.push_back(newsockfd);
+            LOG(INFO) << "  added " << newsockfd << " to room " << roomname;
+        } else {            // existing connection sent message
+
         }
     }
 }
@@ -107,14 +113,18 @@ int main(int argc, char *argv[]) {
     NEXTPORT = portno + 1;
 
     // establish connection to socket
-    int sockfd = initializeSocket(portno);
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        LOG(ERROR) << "Failed to create socket";
+        exit(EXIT_FAILURE);
+    }
+    struct sockaddr_in client_address = initializeSocket(sockfd, portno);
+    socklen_t clilen = sizeof(client_address);
 
     LOG(INFO) << "Starting Server";
 
     // loop infinitely
     while (true) {
-        struct sockaddr_in client_address;
-        socklen_t clilen = sizeof(client_address);
         int newsockfd = accept(sockfd, (struct sockaddr*) &client_address, &clilen);
         if (newsockfd < 0) {
             LOG(ERROR) << "Failed to accept";
@@ -136,8 +146,7 @@ int main(int argc, char *argv[]) {
             //      inform client about result
             string roomname = command.at(1);
             auto res = chatrooms.find(roomname);
-            if (res == chatrooms.end()) {
-                // chat room doesn't exist, make it
+            if (res == chatrooms.end()) {       // chat room doesn't exist, make it
                 std::thread chatThread(chatroomFunction, roomname, NEXTPORT++);
                 chatThread.detach();
             } else {
@@ -161,7 +170,7 @@ int main(int argc, char *argv[]) {
             //      delete entry
             //      inform client of result
             string roomname = command.at(1);
-            chatrooms[roomname].status = 0;         // set chatroom with given name as inactive
+            chatrooms[roomname]->status = 0;         // set chatroom with given name as inactive
         }
 
         // LIST:
