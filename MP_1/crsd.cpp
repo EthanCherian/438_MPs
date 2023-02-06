@@ -60,7 +60,7 @@ struct sockaddr_in initializeSocket(int sockfd, int portno) {
     address.sin_family = INADDR_ANY;
     address.sin_port = htons(portno);
     if (bind(sockfd, (struct sockaddr*) &address, sizeof(address)) < 0) {
-        LOG(ERROR) << "Failed to bind";
+        LOG(ERROR) << "Failed to bind " << portno;
         exit(EXIT_FAILURE);
     }
 
