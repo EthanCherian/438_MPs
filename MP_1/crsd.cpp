@@ -67,11 +67,32 @@ int initializeSocket(int portno) {
 void chatroomFunction(string roomname, int portno) {
     int sockfd = initializeSocket(portno);
     if (sockfd < 0) {
-        LOG(ERROR) << "  (chatroom) Failed to initialize socket";
+        LOG(ERROR) << "  (chatroom) failed to initialize socket";
         exit(EXIT_FAILURE);
     }
 
-    chatrooms.emplace(roomname, Chatroom(portno));
+    chatrooms.emplace(roomname, Chatroom(portno));      // add chatroom to map
+
+    while (true) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(sockfd, &readfds);
+
+        int maxsockfd = sockfd;
+        for (int fd : chatrooms[roomname].connections) {
+            FD_SET(fd, &readfds);
+            maxsockfd = std::max(maxsockfd, fd);
+        }
+
+        if(select(maxsockfd + 1, &readfds, NULL, NULL, NULL) < 0) {
+            LOG(ERROR) << "  (chatroom) failed to select";
+            exit(EXIT_FAILURE);
+        }
+
+        if (FD_ISSET(sockfd, &readfds)) {
+            accept(sockfd, )
+        }
+    }
 }
 
 int main(int argc, char *argv[]) {
