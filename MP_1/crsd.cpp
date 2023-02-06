@@ -22,7 +22,6 @@ int NEXTPORT;
 struct Chatroom {
     int portNum, sockfd, status;
     vector<int> connections;            // sockets of all connections
-    Chatroom(int p) : portNum(p), status(1) {}
     Chatroom(int p, int s) : portNum(p), sockfd(s), status(1) {}
     ~Chatroom() { for (int conn : connections) close(conn); close(sockfd); }
 
@@ -31,7 +30,7 @@ struct Chatroom {
     void terminate() {
         status = 0;
         char warning[MAX_DATA] = "Warning: the chatting room is going to be closed...";
-        for (int conn : connections) send(conn, warning, MAX_DATA, 0);
+        for (int conn : connections) send(conn, warning, MAX_DATA, 0);      // warn all connections of impending closure
     }
 
     void eraseConnection(int index) { connections.erase(connections.begin() + index); }
@@ -119,13 +118,11 @@ void chatroomFunction(string roomname, int portno) {
                     if (read(conn, buf, MAX_DATA) == 0) {            // nothing being read means client died
                         close(conn);
                         newRoom.eraseConnection(i);
-                    } else {
-                        clientfd = conn;
-                    }
+                    } else clientfd = conn;
                     break;
                 }
             }
-            if (clientfd == -1) {
+            if (clientfd != -1) {
                 for (int conn : newRoom.connections) {
                     if (conn != clientfd) send(conn, buf, MAX_DATA, 0);     // send to all other users
                 }
@@ -232,11 +229,19 @@ int main(int argc, char *argv[]) {
             //          send string of comma separated list of chat room names
             //      if no:
             //          send string "empty"
+            char roomList[MAX_DATA];
+            string ret;
             if (chatrooms.empty()) {
-                char ret[] = "empty";
+                ret = "empty";
+                reply.status = FAILURE_INVALID;
             } else {
 
             }
+        } 
+        
+        else {      // some other command
+            reply.status = FAILURE_INVALID;
+            LOG(ERROR) << "Unrecognized command";
         }
 
         char replBuf[MAX_DATA];
