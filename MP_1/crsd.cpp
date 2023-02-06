@@ -85,7 +85,7 @@ void chatroomFunction(string roomname, int portno) {
     chatrooms.emplace(roomname, &newRoom);      // add chatroom to map
 
     int newsockfd;
-    while (newRoom.status) {
+    while (newRoom.status > 0) {
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(sockfd, &readfds);
