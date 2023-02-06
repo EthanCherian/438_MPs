@@ -40,12 +40,13 @@ struct Chatroom {
 void splitBySpace(string sentence, vector<string>& words) {
     // split sentence by spaces, place into words
     string word = "";
-    for (auto x : sentence) {
+    for (char x : sentence) {
         if (x == ' ') {
             words.push_back(word);
             word = "";
         }
         else {
+            if (words.size() == 0) x = toupper(x);
             word = word + x;
         }
     }
