@@ -49,6 +49,7 @@ void splitBySpace(string sentence, vector<string>& words) {
             word = word + x;
         }
     }
+    words.push_back(word);
 }
 
 struct sockaddr_in initializeSocket(int sockfd, int portno) {
