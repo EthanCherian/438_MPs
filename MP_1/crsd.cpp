@@ -42,19 +42,23 @@ void splitBySpace(string sentence, vector<string>& words) {
 
 struct sockaddr_in initializeSocket(int sockfd, int portno) {
     // initialize socket connection, return file descriptor
-    struct sockaddr_in server_address;
-    memset((char*) &server_address, 0, sizeof(struct sockaddr_in));
-    server_address.sin_addr.s_addr = INADDR_ANY;
-    server_address.sin_family = INADDR_ANY;
-    server_address.sin_port = htons(portno);
-    if (bind(sockfd, (struct sockaddr*) &server_address, sizeof(server_address) < 0)) {
+    struct sockaddr_in address;
+    memset((char*) &address, 0, sizeof(struct sockaddr_in));
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_family = INADDR_ANY;
+    address.sin_port = htons(portno);
+    LOG(INFO) << sockfd << " " << portno;
+    if (bind(sockfd, (struct sockaddr*) &address, sizeof(address) < 0)) {
         LOG(ERROR) << "Failed to bind";
         exit(EXIT_FAILURE);
     }
 
     // listen for messages on the socket
-    listen(sockfd, 5);
-    return server_address;
+    if (listen(sockfd, 5) < 0) {
+        LOG(ERROR) << "Failed to listen for connections";
+        exit(EXIT_FAILURE);
+    }
+    return address;
 }
 
 void chatroomFunction(string roomname, int portno) {
