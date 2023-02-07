@@ -176,10 +176,6 @@ int main(int argc, char *argv[]) {
         string bufstr(buf);
         vector<string> command;
         splitBySpace(bufstr, command);
-        if (command.size() < 2 && command.at(0) != "LIST") {
-            LOG(ERROR) << "Invalid command";
-            exit(EXIT_FAILURE);
-        }
 
         Reply reply;
         // CREATE:
