@@ -54,6 +54,9 @@ void splitBySpace(string sentence, vector<string>& words) {
 
 struct sockaddr_in initializeSocket(int sockfd, int portno) {
     // initialize socket connection, return file descriptor
+    int opt = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
     struct sockaddr_in address;
     memset((char*) &address, 0, sizeof(struct sockaddr_in));
     address.sin_addr.s_addr = INADDR_ANY;
@@ -96,7 +99,10 @@ void chatroomFunction(string roomname, int portno) {
             maxsockfd = std::max(maxsockfd, fd);
         }
 
-        if(select(maxsockfd + 1, &readfds, NULL, NULL, NULL) < 0) {
+        struct timeval tv;
+        tv.tv_sec = 4;
+        tv.tv_usec = 0;
+        if(select(maxsockfd + 1, &readfds, NULL, NULL, &tv) < 0) {
             LOG(ERROR) << "  (chatroom) failed to select";
             exit(EXIT_FAILURE);
         }
@@ -128,7 +134,6 @@ void chatroomFunction(string roomname, int portno) {
                 }
             }
         }
-        
     }
 
     chatrooms.erase(roomname);
@@ -236,7 +241,7 @@ int main(int argc, char *argv[]) {
                 ret = "empty";
             } else {
                 for (auto cr : chatrooms) {
-                    // string name = cr.first;
+                    if (cr.second)
                     ret += cr.first + ",";
                 }
             }
@@ -252,7 +257,7 @@ int main(int argc, char *argv[]) {
         char replBuf[MAX_DATA];
         memcpy(replBuf, &reply, sizeof(reply));
 
-        int sentBytes = send(newsockfd, (char*) &reply, MAX_DATA, 0);
+        int sentBytes = send(newsockfd, replBuf, MAX_DATA, 0);
         if (sentBytes < 0) {
             LOG(ERROR) << "Failed to send reply to client";
             exit(EXIT_FAILURE);
