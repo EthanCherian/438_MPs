@@ -106,9 +106,9 @@ void chatroomFunction(string roomname, int portno) {
         }
 
         struct timeval tv;
-        tv.tv_sec = 4;
+        tv.tv_sec = 2;
         tv.tv_usec = 0;
-        // wait for new bytes to be written to socket from fd set, timeout after 4 seconds
+        // wait for new bytes to be written to socket from fd set, timeout after 2 seconds
         if(select(maxsockfd + 1, &readfds, NULL, NULL, &tv) < 0) {
             LOG(ERROR) << "  (chatroom) failed to select";
             exit(EXIT_FAILURE);
