@@ -236,11 +236,12 @@ int main(int argc, char *argv[]) {
                 ret = "empty";
             } else {
                 for (auto cr : chatrooms) {
-                    string name = cr.first;
-                    ret += name + ",";
+                    // string name = cr.first;
+                    ret += cr.first + ",";
                 }
             }
-            memcpy(reply.list_room, ret.data(), ret.size());
+            // memcpy(reply.list_room, ret.data(), ret.size());
+            strcpy(reply.list_room, ret.c_str());
         }
         
         else {      // some other command
