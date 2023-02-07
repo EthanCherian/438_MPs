@@ -28,9 +28,9 @@ struct Chatroom {
     size_t size() { return connections.size(); }
 
     void terminate() {
-        status = 0;
         char warning[MAX_DATA] = "Warning: the chatting room is going to be closed...";
         for (int conn : connections) send(conn, warning, MAX_DATA, 0);      // warn all connections of impending closure
+        status = 0;
     }
 
     void eraseConnection(int index) { connections.erase(connections.begin() + index); }
@@ -230,16 +230,15 @@ int main(int argc, char *argv[]) {
             //          send string of comma separated list of chat room names
             //      if no:
             //          send string "empty"
-            string ret = "[";
+            string ret = "";
             reply.status = SUCCESS;
             if (chatrooms.empty()) {
                 ret = "empty";
             } else {
                 for (auto cr : chatrooms) {
                     string name = cr.first;
-                    ret += name + ", ";
+                    ret += name + ",";
                 }
-                ret += "]";
             }
             memcpy(reply.list_room, ret.data(), ret.size());
         }
