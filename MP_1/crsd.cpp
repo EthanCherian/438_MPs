@@ -230,15 +230,19 @@ int main(int argc, char *argv[]) {
             //          send string of comma separated list of chat room names
             //      if no:
             //          send string "empty"
-            char roomList[MAX_DATA];
-            string ret;
+            string ret = "[";
+            reply.status = SUCCESS;
             if (chatrooms.empty()) {
                 ret = "empty";
-                reply.status = FAILURE_INVALID;
             } else {
-
+                for (auto cr : chatrooms) {
+                    string name = cr.first;
+                    ret += name + ", ";
+                }
+                ret += "]";
             }
-        } 
+            memcpy(reply.list_room, ret.data(), ret.size());
+        }
         
         else {      // some other command
             reply.status = FAILURE_INVALID;
