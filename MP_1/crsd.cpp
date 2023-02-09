@@ -171,7 +171,7 @@ int main(int argc, char *argv[]) {
     vector<int> clientfds;
     struct timeval tv;
     tv.tv_sec = 0;
-    tv.tv_usec = 1000000;
+    tv.tv_usec = 500000;        // wait half a second for client to write
 
     // loop infinitely
     while (true) {
@@ -181,6 +181,8 @@ int main(int argc, char *argv[]) {
             LOG(ERROR) << "Failed to accept";
             exit(EXIT_FAILURE);
         }
+        // if (clientfds.)
+        LOG(INFO) << "Server accepted connection from " << newsockfd;
         clientfds.push_back(newsockfd);
 
         fd_set readfds;                 // set of file descriptors to be read from
@@ -203,13 +205,16 @@ int main(int argc, char *argv[]) {
         // }
         bool cont = false;
         for (int fd : clientfds) {
-            if (FD_ISSET(fd, &readfds)) cont = true;
+            if (FD_ISSET(fd, &readfds)) {
+                cont = true;
+                break;
+            }
         }
         if (!cont) {
             LOG(ERROR) << "Client didn't write yet";
             continue;
         }
-        
+
         // listen on port for a CREATE, DELETE, or JOIN request
         char buf[MAX_DATA];
         int bytes = read(newsockfd, buf, MAX_DATA);     // read input into buffer
