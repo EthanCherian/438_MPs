@@ -181,39 +181,34 @@ int main(int argc, char *argv[]) {
             LOG(ERROR) << "Failed to accept";
             exit(EXIT_FAILURE);
         }
-        // if (clientfds.)
         LOG(INFO) << "Server accepted connection from " << newsockfd;
-        clientfds.push_back(newsockfd);
+        // clientfds.push_back(newsockfd);
 
-        fd_set readfds;                 // set of file descriptors to be read from
-        FD_ZERO(&readfds);
-        FD_SET(newsockfd, &readfds);
+        // fd_set readfds;                 // set of file descriptors to be read from
+        // FD_ZERO(&readfds);
+        // FD_SET(newsockfd, &readfds);
 
-        int maxsockfd = newsockfd;
-        for (int fd : clientfds) {       // add all connection sockets to set
-            FD_SET(fd, &readfds);
-            maxsockfd = std::max(maxsockfd, fd);                // keep track of highest file descriptor
-        }
+        // int maxsockfd = newsockfd;
+        // for (int fd : clientfds) {       // add all connection sockets to set
+        //     FD_SET(fd, &readfds);
+        //     maxsockfd = std::max(maxsockfd, fd);                // keep track of highest file descriptor
+        // }
 
-        if (select(maxsockfd + 1, &readfds, NULL, NULL, &tv) < 0) {
-            LOG(ERROR) << "(main) select failed";
-            exit(EXIT_FAILURE);
-        }
-        // if (!FD_ISSET(newsockfd, &readfds)) {
-        //     LOG(ERROR) << "Client wasn't ready to write";
+        // if (select(maxsockfd + 1, &readfds, NULL, NULL, &tv) < 0) {
+        //     LOG(ERROR) << "(main) select failed";
+        //     exit(EXIT_FAILURE);
+        // }
+        // bool cont = false;
+        // for (int fd : clientfds) {
+        //     if (FD_ISSET(fd, &readfds)) {
+        //         cont = true;
+        //         break;
+        //     }
+        // }
+        // if (!cont) {
+        //     LOG(ERROR) << "Client didn't write yet";
         //     continue;
         // }
-        bool cont = false;
-        for (int fd : clientfds) {
-            if (FD_ISSET(fd, &readfds)) {
-                cont = true;
-                break;
-            }
-        }
-        if (!cont) {
-            LOG(ERROR) << "Client didn't write yet";
-            continue;
-        }
 
         // listen on port for a CREATE, DELETE, or JOIN request
         char buf[MAX_DATA];
