@@ -197,10 +197,19 @@ int main(int argc, char *argv[]) {
             LOG(ERROR) << "(main) select failed";
             exit(EXIT_FAILURE);
         }
-        if (!FD_ISSET(newsockfd, &readfds)) {
-            LOG(ERROR) << "Client wasn't ready to write";
+        // if (!FD_ISSET(newsockfd, &readfds)) {
+        //     LOG(ERROR) << "Client wasn't ready to write";
+        //     continue;
+        // }
+        bool cont = false;
+        for (int fd : clientfds) {
+            if (FD_ISSET(fd, &readfds)) cont = true;
+        }
+        if (!cont) {
+            LOG(ERROR) << "Client didn't write yet";
             continue;
         }
+        
         // listen on port for a CREATE, DELETE, or JOIN request
         char buf[MAX_DATA];
         int bytes = read(newsockfd, buf, MAX_DATA);     // read input into buffer
