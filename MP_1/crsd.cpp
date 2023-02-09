@@ -185,16 +185,20 @@ int main(int argc, char *argv[]) {
 
         fd_set readfds;                 // set of file descriptors to be read from
         FD_ZERO(&readfds);
-        FD_SET(sockfd, &readfds);
+        FD_SET(newsockfd, &readfds);
 
-        int maxsockfd = sockfd;
+        int maxsockfd = newsockfd;
         for (int fd : clientfds) {       // add all connection sockets to set
             FD_SET(fd, &readfds);
             maxsockfd = std::max(maxsockfd, fd);                // keep track of highest file descriptor
         }
 
         if (select(maxsockfd + 1, &readfds, NULL, NULL, &tv) < 0) {
-            LOG(ERROR) << "No bytes ready to read";
+            LOG(ERROR) << "(main) select failed";
+            exit(EXIT_FAILURE);
+        }
+        if (!FD_ISSET(newsockfd, &readfds)) {
+            LOG(ERROR) << "Client wasn't ready to write";
             continue;
         }
         // listen on port for a CREATE, DELETE, or JOIN request
