@@ -169,9 +169,6 @@ int main(int argc, char *argv[]) {
 
     LOG(INFO) << "Starting Server";
     vector<int> clientfds;
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 500000;        // wait half a second for client to write
 
     // loop infinitely
     while (true) {
@@ -194,6 +191,9 @@ int main(int argc, char *argv[]) {
             maxsockfd = std::max(maxsockfd, fd);                // keep track of highest file descriptor
         }
 
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 500000;        // wait half a second for client to write
         if (select(maxsockfd + 1, &readfds, NULL, NULL, &tv) < 0) {
             LOG(ERROR) << "(main) select failed";
             exit(EXIT_FAILURE);
