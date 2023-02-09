@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) {
             maxsockfd = std::max(maxsockfd, fd);                // keep track of highest file descriptor
         }
 
-        if (select(maxsockfd + 1, &readfds, NULL, NULL, NULL) < 0) {
+        if (select(maxsockfd + 1, &readfds, NULL, NULL, &tv) < 0) {
             LOG(ERROR) << "No bytes ready to read";
             continue;
         }
