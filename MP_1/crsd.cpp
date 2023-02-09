@@ -168,6 +168,10 @@ int main(int argc, char *argv[]) {
     socklen_t clilen = sizeof(client_address);
 
     LOG(INFO) << "Starting Server";
+    vector<int> clientfds;
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 1000000;
 
     // loop infinitely
     while (true) {
@@ -177,7 +181,22 @@ int main(int argc, char *argv[]) {
             LOG(ERROR) << "Failed to accept";
             exit(EXIT_FAILURE);
         }
+        clientfds.push_back(newsockfd);
 
+        fd_set readfds;                 // set of file descriptors to be read from
+        FD_ZERO(&readfds);
+        FD_SET(sockfd, &readfds);
+
+        int maxsockfd = sockfd;
+        for (int fd : clientfds) {       // add all connection sockets to set
+            FD_SET(fd, &readfds);
+            maxsockfd = std::max(maxsockfd, fd);                // keep track of highest file descriptor
+        }
+
+        if (select(maxsockfd + 1, &readfds, NULL, NULL, NULL) < 0) {
+            LOG(ERROR) << "No bytes ready to read";
+            continue;
+        }
         // listen on port for a CREATE, DELETE, or JOIN request
         char buf[MAX_DATA];
         int bytes = read(newsockfd, buf, MAX_DATA);     // read input into buffer
