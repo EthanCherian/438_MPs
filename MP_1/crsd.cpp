@@ -2,275 +2,287 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/time.h>
-
+#include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
-#include <vector>
-#include <unordered_map>
 #include <string.h>
-#include <sstream>
+#include <unistd.h>
 #include <thread>
+// TODO: Implement Chat Server.
+#include <unordered_map>
+#include <vector>
 #include "interface.h"
 
-struct ChatRoom {
-    int sockfd, portno, status = 1;
-    std::vector<int> connections;
+using std::string; using std::unordered_map; using std::vector;
 
-    ChatRoom(int sockfd, int portno) : sockfd{sockfd}, portno{portno} {}
+unordered_map<string, struct Chatroom*> chatrooms;          // global map tracking all chatrooms
+int NEXTPORT;                                               // globally track port to be used for next chatroom
 
-    // Clean up all the connections AND the chatroom socket
-    ~ChatRoom() {
-        for(int connection: connections) close(connection);
-        close(sockfd);
+// model relevant information about a chatroom
+struct Chatroom {
+    int portNum, sockfd, status;
+    vector<int> connections;            // sockets of all connections
+    Chatroom(int p, int s) : portNum(p), sockfd(s), status(1) {}
+    ~Chatroom() {
+        for (int conn : connections) close(conn);           // close all connections
+        close(sockfd);                                      // close main socket for chatroom
     }
 
-    // Delays the closing of all the chatrooms, instead updating status and sending msg to all connections
-    void terminate() { 
-        char msg[MAX_DATA] = "Warning: the chatting room is going to be closed...";
-        for(int connection: connections) send(connection, msg, MAX_DATA, 0);
+    size_t size() { return connections.size(); }
+
+    void terminate() {
+        char warning[MAX_DATA] = "Warning: the chatting room is going to be closed...";
+        for (int conn : connections) send(conn, warning, MAX_DATA, 0);      // warn all connections of impending closure
         status = 0;
     }
 
-    // Remove connections if client is closed
-    void erase_connection(int index) { connections.erase(connections.begin() + index); }
-
-    size_t size() { return connections.size(); }
+    void eraseConnection(int index) { connections.erase(connections.begin() + index); }
 };
 
-std::unordered_map<std::string, ChatRoom*> chatrooms; // local "database"
-int PORTNO = 8081;
+void splitBySpace(string sentence, vector<string>& words) {
+    // split sentence by spaces, place into words
+    string word = "";
+    for (char x : sentence) {
+        if (x == ' ') {
+            words.push_back(word);
+            word = "";
+        }
+        else {
+            if (words.size() == 0) x = toupper(x);          // make first word uppercase
+            word = word + x;
+        }
+    }
+    words.push_back(word);
+}
 
-sockaddr_in socket_initialization(int sockfd, int port){
+struct sockaddr_in initializeSocket(int sockfd, int portno) {
+    // initialize socket connection, return file descriptor
     struct sockaddr_in address;
     memset((char*) &address, 0, sizeof(struct sockaddr_in));
-
-    // use initialization from 313
-    address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons( port ); // matches endianess
+    address.sin_family = INADDR_ANY;
+    address.sin_port = htons(portno);
 
-    if(bind(sockfd, (struct sockaddr *) &address, sizeof(address)) < 0){
-        LOG(ERROR) << "bind failed" << std::endl;
+    // allow reusing of local addresses so testing is easier
+    int opt = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    
+    if (bind(sockfd, (struct sockaddr*) &address, sizeof(address)) < 0) {
+        LOG(ERROR) << "Failed to bind " << portno;
         exit(EXIT_FAILURE);
     }
 
-    if(listen(sockfd, 5) < 0){
-        LOG(ERROR) << "listen failed" << std::endl;
+    // listen for messages on the socket
+    if (listen(sockfd, 5) < 0) {
+        LOG(ERROR) << "Failed to listen for connections";
         exit(EXIT_FAILURE);
     }
-
     return address;
 }
 
-// Function dedicated for threads, spawns new socket to act as chatroom
-void chatroom_thread(std::string chatroom_name){
-    int sockfd, new_socket;
-    if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) <= 0){
-        LOG(ERROR) << "(thread) new socket failed" << std::endl;
+void chatroomFunction(string roomname, int portno) {
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        LOG(ERROR) << "  (chatroom) failed to initialize socket";
         exit(EXIT_FAILURE);
     }
+    // initialize main chatroom socket
+    struct sockaddr_in address = initializeSocket(sockfd, portno);
 
-    struct sockaddr_in address = socket_initialization(sockfd, PORTNO);
-    int addr_len = sizeof(address);
-    fd_set readfds;
+    // create new chatroom
+    Chatroom newRoom = Chatroom(portno, sockfd);
+    chatrooms.emplace(roomname, &newRoom);      // add chatroom to map
 
-    ChatRoom chatroom(sockfd, PORTNO++);
-    chatrooms[chatroom_name] = &chatroom;
-    // chatrooms.emplace(chatroom_name, ChatRoom(sockfd, PORTNO++)); // ask why this would've been a problem
-    while(chatroom.status){
-        struct timeval tv; // time intervals of 4 seconds, also gives clients ample warning time
-        tv.tv_sec = 2;
-        tv.tv_usec = 0;
-        int max_sockfd = sockfd;
+    int newsockfd;
+    while (newRoom.status > 0) {        // continue as long as chatroom is active
+        fd_set readfds;                 // set of file descriptors to be read from
         FD_ZERO(&readfds);
-  		FD_SET(sockfd, &readfds);
+        FD_SET(sockfd, &readfds);
 
-        for(int conn: chatroom.connections) {
-            FD_SET(conn, &readfds);
-            max_sockfd = std::max(max_sockfd, conn);
+        int maxsockfd = sockfd;
+        for (int fd : chatrooms[roomname]->connections) {       // add all connection sockets to set
+            FD_SET(fd, &readfds);
+            maxsockfd = std::max(maxsockfd, fd);                // keep track of highest file descriptor
         }
 
-        if(select(max_sockfd + 1, &readfds, NULL, NULL, &tv) < 0){
-            LOG(ERROR) << "(thread) select failed" << std::endl;
-            LOG(ERROR) << errno << std::endl;
+        struct timeval tv;
+        tv.tv_sec = 2;
+        tv.tv_usec = 0;
+        // wait for new bytes to be written to socket from fd set, timeout after 2 seconds
+        if(select(maxsockfd + 1, &readfds, NULL, NULL, &tv) < 0) {
+            LOG(ERROR) << "  (chatroom) failed to select";
             exit(EXIT_FAILURE);
         }
 
-        if(FD_ISSET(sockfd, &readfds)){ // we know it's an incoming connection
-            if( (new_socket = accept(sockfd, (struct sockaddr *) &address, (socklen_t *)&addr_len)) < 0 ){
-                LOG(ERROR) << "(thread) accept failed" << std::endl;
-                LOG(ERROR) << "(thread) sockfd: " << sockfd << std::endl;
-                
+        if (FD_ISSET(sockfd, &readfds)) {       // a new connection sent the message
+            socklen_t addrlen = sizeof(address);
+            newsockfd = accept(sockfd, (struct sockaddr*) &address, &addrlen);      // accept the connection
+            if (newsockfd < 0) {
+                LOG(ERROR) << "  (chatroom) failed to accept incoming connection";
                 exit(EXIT_FAILURE);
             }
-            chatroom.connections.push_back(new_socket);
-        } else{ // we know that one of the connections triggered it
+            chatrooms[roomname]->connections.push_back(newsockfd);                  // add to chatroom
+        } else {            // existing connection sent message
             char buf[MAX_DATA];
-            int sender_sockfd = -1;
-            for(int i = chatroom.size() - 1; i >= 0; i--){
-                int conn = chatroom.connections[i];
-                if(FD_ISSET(conn, &readfds)){
-                    if(read(conn, buf, MAX_DATA) == 0){ // client side died
-                        LOG(INFO) << "(thread) client has disconnected..." << std::endl;
-                        close(conn);
-                        chatroom.erase_connection(i);
-                    } else sender_sockfd = conn;
+            int clientfd = -1;
+            for (int i = 0; i < newRoom.size(); i++) {
+                int conn = newRoom.connections[i];
+                if (FD_ISSET(conn, &readfds)) {
+                    if (read(conn, buf, MAX_DATA) == 0) {            // nothing being read means client died
+                        close(conn);                        // close connection from both ends
+                        newRoom.eraseConnection(i);
+                    } else clientfd = conn;
                     break;
                 }
             }
-            if(sender_sockfd != -1){ // ensure that one of the connections truly triggered it
-                for(int conn: chatroom.connections){
-                    if(conn != sender_sockfd) send(conn, buf, MAX_DATA, 0);
+            if (clientfd != -1) {
+                for (int conn : newRoom.connections) {
+                    if (conn != clientfd) send(conn, buf, MAX_DATA, 0);     // send to all other users
                 }
             }
         }
     }
-    chatrooms.erase(chatroom_name); // remove it from map when chatroom closes, also destructs object
+
+    chatrooms.erase(roomname);              // remove chatroom from system
     return;
 }
 
-int main(int argc, char *argv[]){
+int main(int argc, char *argv[]) {
     google::InitGoogleLogging(argv[0]);
+
+    if (argc != 2) {
+        LOG(ERROR) << "USAGE: enter port number";
+		exit(1);
+    }
+    // accept port number as CLI argument
+    int portno = atoi(argv[1]);
+    NEXTPORT = portno + 1;              // chatrooms' port numbers should start immediately after main server's
+
+    // establish connection to socket
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        LOG(ERROR) << "Failed to create socket";
+        exit(EXIT_FAILURE);
+    }
+    struct sockaddr_in client_address = initializeSocket(sockfd, portno);       // move bulk of socket work into function
+    socklen_t clilen = sizeof(client_address);
 
     LOG(INFO) << "Starting Server";
 
-    int master_socket, client_socket;
-    std::string word;
+    // loop infinitely
+    while (true) {
+        // accept client's incoming connection, store socket file descriptor
+        int newsockfd = accept(sockfd, (struct sockaddr*) &client_address, &clilen);
+        if (newsockfd < 0) {
+            LOG(ERROR) << "Failed to accept";
+            exit(EXIT_FAILURE);
+        }
+        LOG(INFO) << "Server accepted connection from " << newsockfd;
 
-    if((master_socket = socket(AF_INET, SOCK_STREAM, 0)) <= 0){
-        LOG(ERROR) << "(main) socket failed" << std::endl;
-        exit(EXIT_FAILURE);
-    }
+        // listen on port for a CREATE, DELETE, or JOIN request
+        char buf[MAX_DATA];
+        int bytes = read(newsockfd, buf, MAX_DATA);     // read input into buffer
+        if (bytes < 0) {
+            LOG(ERROR) << "Failed to read";
+            exit(EXIT_FAILURE);
+        } else if (bytes == 0) {                // read nothing from client
+            LOG(ERROR) << "Read nothing, did client disconnect?";
+        }
+        string bufstr(buf);
+        vector<string> command;
+        splitBySpace(bufstr, command);      // split input by space to separate command from name
 
-    struct sockaddr_in address = socket_initialization(master_socket, atoi(argv[1]));
-    int addr_len = sizeof(address);
-    
-    std::vector<int> connections;
-    fd_set readfds;
-    while(true){
-        FD_ZERO(&readfds);
-  		FD_SET(master_socket, &readfds);
-        char buf[MAX_DATA], msg[MAX_DATA];
-
-        int bytes, maxsock = master_socket;
-        for(auto conn: connections){
-            FD_SET(conn, &readfds);
-            maxsock = std::max(maxsock, conn);
+        Reply reply;
+        // CREATE:
+        if (command.at(0) == "CREATE") {
+            //  check for existing chat room, if not:
+            //      create new master socket
+            //      create an entry for new chatroom in local database
+            //      inform client about result
+            string roomname = command.at(1);
+            auto res = chatrooms.find(roomname);
+            if (res == chatrooms.end()) {       // chat room doesn't exist, make it
+                std::thread chatThread(chatroomFunction, roomname, NEXTPORT++);     // create thread, increase next port to be used
+                chatThread.detach();            // thread should run independently
+                reply.status = SUCCESS;
+            } else {
+                reply.status = FAILURE_ALREADY_EXISTS;
+            }
         }
 
-        if(select(maxsock + 1, &readfds, NULL, NULL, NULL) < 0){
-            LOG(ERROR) << "(main) select failed" << std::endl;
-            LOG(ERROR) << errno << std::endl;
+        // JOIN:
+        else if (command.at(0) == "JOIN") {
+            //  check whether chat room exists, if yes:
+            //      return port number of master socket of the chat room and current number of members
+            string roomname = command.at(1);
+            auto res = chatrooms.find(roomname);
+            if (res == chatrooms.end()) {           // chat room doesn't exist
+                reply.status = FAILURE_NOT_EXISTS;
+            } else {
+                reply.status = SUCCESS;
+                reply.num_member = res->second->connections.size();     // return desired values
+                reply.port = res->second->portNum;
+            }
+        }
+
+        // DELETE: 
+        else if (command.at(0) == "DELETE") {
+            //  check whether chat room exists, if yes:
+            //      send warning message to all clients
+            //      terminate client connections
+            //      close master socket
+            //      delete entry
+            //      inform client of result
+            string roomname = command.at(1);
+            auto res = chatrooms.find(roomname);
+            if (res == chatrooms.end()) {
+                reply.status = FAILURE_NOT_EXISTS;
+            } else {
+                chatrooms[roomname]->terminate();         // close chatroom
+                reply.status = SUCCESS;
+            }
+        }
+
+        // LIST:
+        else if (command.at(0) == "LIST") {
+            //  check whether chat rooms exists
+            //      if yes:
+            //          send string of comma separated list of chat room names
+            //      if no:
+            //          send string "empty"
+            string ret = "";
+            reply.status = SUCCESS;
+            if (chatrooms.empty()) {
+                ret = "empty";
+            } else {
+                for (auto cr : chatrooms) {         // add all names to string
+                    ret += cr.first + ",";
+                }
+            }
+            strcpy(reply.list_room, ret.c_str());   // copy string to reply's char array
+        }
+        
+        else {      // some other command
+            reply.status = FAILURE_INVALID;
+            LOG(ERROR) << "Unrecognized command";
+        }
+
+        char replBuf[MAX_DATA];
+        memcpy(replBuf, &reply, sizeof(reply));     // put reply into character buffer
+
+        // send reply to client 
+        int sentBytes = send(newsockfd, replBuf, MAX_DATA, 0);
+        if (sentBytes < 0) {
+            LOG(ERROR) << "Failed to send reply to client";
             exit(EXIT_FAILURE);
         }
 
-        if(FD_ISSET(master_socket, &readfds)){
-            if( (client_socket = accept(master_socket, (struct sockaddr *) &address, (socklen_t *)&addr_len)) < 0 ){
-                LOG(ERROR) << "accept failed" << std::endl;
-                exit(EXIT_FAILURE); // might need to exit more gracefully
-            }
-            connections.push_back(client_socket);
-        } else{
-            for(int i = connections.size()-1; i >= 0; i--){
-                if(!FD_ISSET(connections[i], &readfds)) continue;
-                if((bytes = read(connections[i], &buf, MAX_DATA)) < 0){
-                    LOG(ERROR) << "server read failed" << std::endl;
-                    exit(EXIT_FAILURE); // might need to exit more gracefully
-                } else if(bytes == 0) { // client terminated
-                    LOG(ERROR) << "server read 0 bytes, maybe client disconnected?" << std::endl;
-                    close(connections[i]);
-                    connections.erase(connections.begin() + i);
-                    continue;
-                }
-
-                // Process the command
-                std::stringstream ss(buf);
-                int command, index = 0;
-                while(ss >> word){
-                    if(index == 0){
-                        if(word == "create") command = 0;
-                        else if(word == "join") command = 1;
-                        else if(word == "delete") command = 2;
-                        else command = 3; // list
-                    }
-                    index++;
-                }
-
-                Reply reply;
-                switch(command){
-                    case 0: // create
-                        // check if chatroom exists
-                        // if not, create new chat room socket
-                        // add chat room name to map
-                        // send the result back to client
-                        if(chatrooms.count(word) == 0){
-                            std::thread new_thread(chatroom_thread, word);
-                            new_thread.detach();
-                            reply.status = SUCCESS;
-                        } else reply.status = FAILURE_ALREADY_EXISTS;
-                        break;
-                    case 1: // join
-                        if(chatrooms.count(word) == 1){
-                            auto& chatroom = chatrooms[word];
-                            reply.status = SUCCESS;
-                            reply.num_member = chatroom->size();
-                            reply.port = chatroom->portno;
-                        } else reply.status = FAILURE_NOT_EXISTS;
-                        break;
-                    case 2: // delete
-                        // Check if exist
-                        // Send warning message to all connected clients
-                        // terminate all connections
-                        // close the chat room socket
-                        // send the result to the client_socket
-                        if(chatrooms.count(word) == 1){
-                            chatrooms[word]->terminate();
-                            reply.status = SUCCESS;
-                        } else reply.status = FAILURE_NOT_EXISTS;
-                        break;
-                    case 3: // list
-                        // check if chatrooms exist
-                        // true - send client_socket string containing comma delimited list of names
-                        // false - send "empty"
-                        if(chatrooms.size() > 0){
-                            int ind = 0, cnt = 0;
-                            for(auto& [name, value]: chatrooms){
-                                for(char c: name) {
-                                    msg[ind] = c;
-                                    ind++;
-                                }
-                                cnt++;
-                                if(cnt <= chatrooms.size() - 1){
-                                    msg[ind++] = ',';
-                                    msg[ind++] = ' ';
-                                }
-                            }
-                            msg[ind] = '\0';
-                        } else strcpy(msg, "empty");
-                        reply.status = SUCCESS;
-                        memcpy(reply.list_room, msg, sizeof(msg));
-                        break;
-                    default:
-                        reply.status = FAILURE_INVALID;
-                }
-
-                if(send(connections[i], (char*)&reply, MAX_DATA, 0) < 0){
-                    LOG(ERROR) << "(main) send failed" << std::endl;
-                    exit(EXIT_FAILURE);
-                }
-                if(close(connections[i]) < 0){
-                    LOG(ERROR) << "(main) close client_socket failed" << std::endl;
-                    exit(EXIT_FAILURE);
-                }
-                connections.erase(connections.begin() + i);
-            }
-
+        // close client socket on server end
+        int closed = close(newsockfd);
+        if (closed < 0) {
+            LOG(ERROR) << "Failed to close connection to client";
+            exit(EXIT_FAILURE);
         }
     }
-
-    return 0;
 }
 
