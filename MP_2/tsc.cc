@@ -65,7 +65,6 @@ int main(int argc, char** argv) {
                 std::cerr << "Invalid Command Line Argument\n";
         }
     }
-    std::cout << hostname << " " << username << " " << port << std::endl;
 
     Client myc(hostname, username, port);
     // You MUST invoke "run_client" function to start business logic
@@ -93,8 +92,6 @@ int Client::connectTo()
 	Reply rep;
 	req.set_username(username);
 	Status loginStat = stub_->Login(&cliCon, req, &rep);
-	
-	cout << "login ok? " << loginStat.ok() << endl;
 
     return (loginStat.ok()) ? 1 : -1; // return 1 if success, otherwise return -1
 }
@@ -161,23 +158,34 @@ IReply Client::processCommand(std::string& input)
     IReply ire;
 	req.set_username(username);		// request coming from user
 	if (command == "FOLLOW") {
-		cout << " in follow" << endl;
+		req.add_arguments(user);	// user to be followed
 		stat = stub_->Follow(&cliCon, req, &rep);
+		cout << rep.msg() << endl;
+		ire.grpc_status = stat;
+		string m = rep.msg();
+		if (m == "doesn't exist") {
+			ire.comm_status = FAILURE_INVALID_USERNAME;
+		} else if (m == "already following") {	
+			ire.comm_status = FAILURE_ALREADY_EXISTS;
+		} else {
+			ire.comm_status = (stat.ok()) ? SUCCESS : FAILURE_INVALID;
+		}
+		if (stat.ok())			// update following users if successful
+			ire.following_users = { user };
 	} else if (command == "UNFOLLOW") {
 		cout << " in unfollow" << endl;
 		stat = stub_->UnFollow(&cliCon, req, &rep);
 	} else if (command == "LIST") {
-		cout << " in list" << endl;
 		stat = stub_->List(&cliCon, req, &rep);
 		ire.all_users = {rep.all_users().begin(), rep.all_users().end()};
 		ire.following_users = {rep.following_users().begin(), rep.following_users().end()};
+		ire.grpc_status = stat;
+		ire.comm_status = (stat.ok()) ? SUCCESS : FAILURE_INVALID;
 	} else if (command == "TIMELINE") {
 		cout << " in timeline" << endl;
 		//stat = stub_->Timeline(&cliCon, &req, &rep);
 	}
     
-    ire.grpc_status = stat;
-    ire.comm_status = (stat.ok()) ? SUCCESS : FAILURE_INVALID;
     return ire;
 }
 

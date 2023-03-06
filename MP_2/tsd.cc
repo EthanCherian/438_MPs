@@ -61,10 +61,8 @@ class SNSServiceImpl final : public SNSService::Service {
     // all_users & following_users are populated
     // ------------------------------------------------------------
     string user = request->username();
-    //cout << "received list from " << user << endl;
-
 	User* u = existing_users[user];
-	cout << u->username << endl;
+	
     for (auto it = existing_users.begin(); it != existing_users.end(); it++) {
     	reply->add_all_users(it->first);
     }
@@ -81,7 +79,23 @@ class SNSServiceImpl final : public SNSService::Service {
     // users
     // ------------------------------------------------------------
     string user = request->username();
-    cout << "recevied follow from " << user << endl;
+	string followee = *(request->arguments().begin());	// user to follow
+    cout << "received follow request from " << user << " to " << followee << endl;
+    std::unique_lock<std::mutex> lock(mut);
+    
+    User* u = existing_users[user];
+    if (existing_users.count(followee) == 0) {		// followee doesn't exist
+    	reply->set_msg("doesn't exist");
+    	return Status::OK;			// can't return different status >:(
+    } else if (u->following.count(followee) != 0) {	// already following
+    	reply->set_msg("already following");
+    	return Status::OK;
+    }
+    
+	User* follUser = existing_users[followee];
+	follUser->followers.insert(user);
+	u->following.insert(followee);
+	reply->set_msg("all good");
     return Status::OK; 
   }
 
@@ -101,7 +115,7 @@ class SNSServiceImpl final : public SNSService::Service {
     // or already taken
     // ------------------------------------------------------------
     string user = request->username();
-    std::unique_lock<std::mutex> lck;
+    std::unique_lock<std::mutex> lck(mut);
     if (all_users.count(user) != 0)			// user currently active
     	return Status::CANCELLED;
     
