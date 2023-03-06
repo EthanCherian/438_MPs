@@ -142,8 +142,9 @@ class SNSServiceImpl final : public SNSService::Service {
     // ------------------------------------------------------------
     string user = request->username();
     std::unique_lock<std::mutex> lck(mut);
-    if (active_users.count(user) != 0)			// user currently active
+    if (active_users.count(user) != 0) {		// user currently active
     	return Status::CANCELLED;
+	}
     
     active_users.insert(user);
     if(existing_users.count(user) == 0) {	// new user
@@ -170,7 +171,7 @@ class SNSServiceImpl final : public SNSService::Service {
     //for (const Message& time_msg : u->timeline) {
     //	stream->Write(time_msg);
     //}
-    for (auto it = u->timeline.rbegin(); it != u->timeline.rend(); it++) {
+    for (auto it = u->timeline.rbegin(); it != u->timeline.rend(); it++) {		// print existing contents of timeline backwards
     	stream->Write(*it);
     }
     
@@ -179,7 +180,7 @@ class SNSServiceImpl final : public SNSService::Service {
     	lck.lock();
     	for (string followerStr : u->followers) {
     		User* follower = existing_users[followerStr];
-    		if (follower->timeline.size() >= 20) {		// show only 20 newest posts
+    		if (follower->timeline.size() >= 20) {		// show only 20 *newest* posts
     			follower->timeline.pop_front();
     		}
     		follower->timeline.push_back(msg);
@@ -229,7 +230,8 @@ void terminationHandler(int sig) {
 
 		// write timeline to file
 		userout << user->timeline.size() << endl;
-		for (auto& msg : user->timeline) {
+		for (auto it = user->timeline.rbegin(); it != user->timeline.rend(); it++) {		// print existing contents of timeline backwards
+			auto msg = *it;
 			auto t = msg.timestamp().seconds();
 			userout << msg.username() << " " << msg.msg() << " " << t << endl;
 		}
@@ -251,7 +253,62 @@ void terminationHandler(int sig) {
 }
 
 void readData() {
+	std::ifstream infile("users.txt");
+
+	// make sure file exists and opened properly 
+	if (!infile.good()) return;
 	
+	int numUsers = -1;
+	infile >> numUsers;
+	
+	for (int i = 0; i < numUsers; i++) {
+		string uname;
+		infile >> uname;
+		std::ifstream userin(uname+".txt");
+		
+		User* newUser = new User(uname);
+		
+		int timelineSize;		// load user's timeline
+		userin >> timelineSize;
+		for (int t = 0; t < timelineSize; t++) {
+			string postUser;
+			userin >> postUser;			// get poster's username
+			
+			string msg;
+			getline(userin, msg);		// get post's message (\n separated)
+			
+			Timestamp* timestamp = new Timestamp();
+			int secondsSinceEpoch;
+			userin >> secondsSinceEpoch;	// get time of post
+			timestamp->set_seconds(secondsSinceEpoch);
+			
+			Message post;
+			post.set_username(postUser);
+			post.set_msg(msg);
+			post.set_allocated_timestamp(timestamp);
+			
+			newUser->timeline.push_back(post);
+		}
+		
+		int followers;			// load user's followers
+		userin >> followers;
+		for (int f = 0; f < followers; f++) {
+			string follower;
+			userin >> follower;
+			newUser->followers.insert(follower);
+		}
+		
+		
+		int followings;			// load user's followings
+		userin >> followings;
+		for (int f = 0; f < followings; f++) {
+			string following;
+			userin >> following;
+			newUser->following.insert(following);
+		}
+		
+		existing_users[uname] = newUser;
+	}
 }
 
 int main(int argc, char** argv) {
@@ -261,6 +318,8 @@ int main(int argc, char** argv) {
 	interruptHandler.sa_flags = 0;
 	
 	sigaction(SIGINT, &interruptHandler, NULL);
+	
+	readData();
 
 	std::string port = "3010";
 	int opt = 0;
