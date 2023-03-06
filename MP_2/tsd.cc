@@ -43,14 +43,19 @@ struct User {
 	string username;
 	set<string> followers;
 	set<string> following;
-	deque<string> timeline; 	// max size 20
+	deque<Message> timeline; 	// max size 20
+	ServerReaderWriter<Message, Message>* userStream;
 	
 	User(string u) {
 		username = u;
 		followers.insert(u);		// new users start following themselves
 		following.insert(u);
+		userStream = NULL;
 	}
 };
+
+set<string> active_users;
+map<string, User*> existing_users;
 
 class SNSServiceImpl final : public SNSService::Service {
   
@@ -136,10 +141,10 @@ class SNSServiceImpl final : public SNSService::Service {
     // ------------------------------------------------------------
     string user = request->username();
     std::unique_lock<std::mutex> lck(mut);
-    if (all_users.count(user) != 0)			// user currently active
+    if (active_users.count(user) != 0)			// user currently active
     	return Status::CANCELLED;
     
-    all_users.insert(user);
+    active_users.insert(user);
     if(existing_users.count(user) == 0) {	// new user
     	User u = User(user);
     	existing_users.insert(std::make_pair(user, new User(user)));
@@ -154,12 +159,37 @@ class SNSServiceImpl final : public SNSService::Service {
     // receiving a message/post from a user, recording it in a file
     // and then making it available on his/her follower's streams
     // ------------------------------------------------------------
+    std::unique_lock<std::mutex> lck(mut);
+    Message msg;
+    stream->Read(&msg);
+    
+    string user = msg.username();
+    User* u = existing_users[user];
+    u->userStream = stream;
+    for (const Message& time_msg : u->timeline) {
+    	stream->Write(time_msg);
+    }
+    
+    lck.unlock();
+    while (stream->Read(&msg)) {
+    	lck.lock();
+    	for (string followerStr : u->followers) {
+    		User* follower = existing_users[followerStr];
+    		follower->timeline.push_back(msg);
+    		if (follower->userStream != nullptr && followerStr != user) {
+    			follower->userStream->Write(msg);
+    		}
+    	}
+    	lck.unlock();
+    }
+    
+    lck.lock();
+    active_users.erase(user);		// current user is no longer active
+    u->userStream = NULL;			// invalidate stream
+    
     return Status::OK;
   }
-  
-  set<string> all_users;
-  set<string> following_users;
-  map<string, User*> existing_users;
+ 
   std::mutex mut;
 };
 

@@ -1,28 +1,26 @@
 #include <iostream>
 #include <string>
-#include <vector>
-#include <map>
-#include <set>
 #include <sstream>
-#include <deque>
+#include <thread>
 #include <unistd.h>
 #include <grpc++/grpc++.h>
+#include <google/protobuf/util/time_util.h>
 #include "client.h"
+#include "poll.h"
 
 #include "sns.grpc.pb.h"
 using csce438::SNSService;
 using csce438::Reply;
 using csce438::Request;
+using csce438::Message;
 using grpc::Status;
 using grpc::ClientContext;
+using grpc::ClientReaderWriter;
+using google::protobuf::Timestamp;
 
 using std::cout;
 using std::endl;
 using std::string;
-using std::vector;
-using std::map;
-using std::set;
-using std::deque;
 using std::stringstream;
 
 class Client : public IClient
@@ -187,12 +185,13 @@ IReply Client::processCommand(std::string& input)
 		ire.following_users = {rep.following_users().begin(), rep.following_users().end()};
 		ire.grpc_status = stat;
 		ire.comm_status = (stat.ok()) ? SUCCESS : FAILURE_INVALID;
-	} else if (command == "TIMELINE") {
-		cout << " in timeline" << endl;
-		//stat = stub_->Timeline(&cliCon, &req, &rep);
 	}
     
     return ire;
+}
+
+void streamHandler(std::shared_ptr<ClientReaderWriter<Message, Message>> stream, Message& res, bool& running) {
+	
 }
 
 void Client::processTimeline()
@@ -213,4 +212,45 @@ void Client::processTimeline()
     // and you can terminate the client program by pressing
     // CTRL-C (SIGINT)
 	// ------------------------------------------------------------
+	ClientContext cliCon;
+	Message req;
+	Message res;
+	req.set_username(username);
+	
+	std::shared_ptr< ClientReaderWriter<Message, Message> > stream (stub_->Timeline(&cliCon));
+	stream->Write(req);
+	
+	bool running = true;
+	std::thread streamReader([this, stream, res, running]() mutable {
+		while(stream->Read(&res)) {
+			auto timeSinceEpoch = res.timestamp().seconds();
+			displayPostMessage(res.username(), res.msg(), timeSinceEpoch);
+		}
+		stream->Finish();
+		running = false;
+	});
+	
+	struct pollfd fds;
+	int ret;
+	fds.fd = 0;					// stdin
+	fds.events = POLLIN;		// when data can be read
+	char buf[256];
+	while (running) {
+		ret = poll(&fds, 1, 500);		// timeout after 0.5sec
+		if (ret == 1) {					// success
+			Timestamp* timestamp = new Timestamp();
+			timestamp->set_seconds(time(NULL));
+			fgets(buf, 256, stdin);
+			req.set_msg(buf);
+			req.set_allocated_timestamp(timestamp);
+			stream->Write(req);
+		} else if (ret == 0) {			// poll timed out
+		
+		} else {						// error occurred
+			stream->Finish();
+			exit(1);
+		}
+	}
+	streamReader.join();
+	exit(0);				// terminate on server's termination
 }
