@@ -3,10 +3,18 @@
 #include <vector>
 #include <map>
 #include <set>
-#include <queue>
+#include <sstream>
+#include <deque>
 #include <unistd.h>
 #include <grpc++/grpc++.h>
 #include "client.h"
+
+#include "sns.grpc.pb.h"
+using csce438::SNSService;
+using csce438::Reply;
+using csce438::Request;
+using grpc::Status;
+using grpc::ClientContext;
 
 using std::cout;
 using std::endl;
@@ -14,14 +22,8 @@ using std::string;
 using std::vector;
 using std::map;
 using std::set;
-using std::queue;
-
-struct User {
-	string username;
-	set<string> followers;
-	set<string> following;
-	queue<string> timeline; 	// max size 20
-};
+using std::deque;
+using std::stringstream;
 
 class Client : public IClient
 {
@@ -42,7 +44,7 @@ class Client : public IClient
         
         // You can have an instance of the client stub
         // as a member variable.
-        //std::unique_ptr<ClientStub::Stub> stub_;
+        std::unique_ptr<SNSService::Stub> stub_;
 };
 
 int main(int argc, char** argv) {
@@ -83,9 +85,18 @@ int Client::connectTo()
     // a member variable in your own Client class.
     // Please refer to gRpc tutorial how to create a stub.
 	// ------------------------------------------------------------
-	//stub_ = grpc::CreateChannel("localhost:3000", grpc::InsecureChannelCredentials());
+	auto channel = grpc::CreateChannel(hostname+":"+port, grpc::InsecureChannelCredentials());
+	stub_ = SNSService::NewStub(channel);
+	
+	ClientContext cliCon;
+	Request req;
+	Reply rep;
+	req.set_username(username);
+	Status loginStat = stub_->Login(&cliCon, req, &rep);
+	
+	cout << "login ok? " << loginStat.ok() << endl;
 
-    return 1; // return 1 if success, otherwise return -1
+    return (loginStat.ok()) ? 1 : -1; // return 1 if success, otherwise return -1
 }
 
 IReply Client::processCommand(std::string& input)
@@ -100,7 +111,7 @@ IReply Client::processCommand(std::string& input)
 	// FOLLOW <username>
 	// UNFOLLOW <username>
 	// LIST
-    	// TIMELINE
+    // TIMELINE
 	//
 	// ------------------------------------------------------------
 	
@@ -134,8 +145,39 @@ IReply Client::processCommand(std::string& input)
     // For the command "LIST", you should set both "all_users" and 
     // "following_users" member variable of IReply.
     // ------------------------------------------------------------
+    stringstream ss(input);
+
+    string command = "";
+    ss >> command;
     
+	string user = "";
+	ss >> user;
+	
+    ClientContext cliCon;
+    Request req;
+    Reply rep;
+    
+	Status stat;
     IReply ire;
+	req.set_username(username);		// request coming from user
+	if (command == "FOLLOW") {
+		cout << " in follow" << endl;
+		stat = stub_->Follow(&cliCon, req, &rep);
+	} else if (command == "UNFOLLOW") {
+		cout << " in unfollow" << endl;
+		stat = stub_->UnFollow(&cliCon, req, &rep);
+	} else if (command == "LIST") {
+		cout << " in list" << endl;
+		stat = stub_->List(&cliCon, req, &rep);
+		ire.all_users = {rep.all_users().begin(), rep.all_users().end()};
+		ire.following_users = {rep.following_users().begin(), rep.following_users().end()};
+	} else if (command == "TIMELINE") {
+		cout << " in timeline" << endl;
+		//stat = stub_->Timeline(&cliCon, &req, &rep);
+	}
+    
+    ire.grpc_status = stat;
+    ire.comm_status = (stat.ok()) ? SUCCESS : FAILURE_INVALID;
     return ire;
 }
 
