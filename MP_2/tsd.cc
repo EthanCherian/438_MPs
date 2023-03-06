@@ -4,6 +4,8 @@
 #include <google/protobuf/duration.pb.h>
 
 #include <fstream>
+#include <set>
+#include <mutex>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -27,6 +29,8 @@ using csce438::Message;
 using csce438::Request;
 using csce438::Reply;
 using csce438::SNSService;
+
+using std::cout; using std::endl; using std::string; using std::vector;
 
 class SNSServiceImpl final : public SNSService::Service {
   
@@ -74,6 +78,10 @@ class SNSServiceImpl final : public SNSService::Service {
     // ------------------------------------------------------------
     return Status::OK;
   }
+  
+  std::set<std::string> all_users;
+  std::set<std::string> following_users;
+  std::mutex mut;
 
 };
 
@@ -86,7 +94,6 @@ void RunServer(std::string port_no) {
 }
 
 int main(int argc, char** argv) {
-  
   std::string port = "3010";
   int opt = 0;
   while ((opt = getopt(argc, argv, "p:")) != -1){

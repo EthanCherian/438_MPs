@@ -1,8 +1,27 @@
 #include <iostream>
 #include <string>
+#include <vector>
+#include <map>
+#include <set>
+#include <queue>
 #include <unistd.h>
 #include <grpc++/grpc++.h>
 #include "client.h"
+
+using std::cout;
+using std::endl;
+using std::string;
+using std::vector;
+using std::map;
+using std::set;
+using std::queue;
+
+struct User {
+	string username;
+	set<string> followers;
+	set<string> following;
+	queue<string> timeline; 	// max size 20
+};
 
 class Client : public IClient
 {
@@ -23,7 +42,7 @@ class Client : public IClient
         
         // You can have an instance of the client stub
         // as a member variable.
-        //std::unique_ptr<NameOfYourStubClass::Stub> stub_;
+        //std::unique_ptr<ClientStub::Stub> stub_;
 };
 
 int main(int argc, char** argv) {
@@ -44,6 +63,7 @@ int main(int argc, char** argv) {
                 std::cerr << "Invalid Command Line Argument\n";
         }
     }
+    std::cout << hostname << " " << username << " " << port << std::endl;
 
     Client myc(hostname, username, port);
     // You MUST invoke "run_client" function to start business logic
@@ -63,6 +83,7 @@ int Client::connectTo()
     // a member variable in your own Client class.
     // Please refer to gRpc tutorial how to create a stub.
 	// ------------------------------------------------------------
+	//stub_ = grpc::CreateChannel("localhost:3000", grpc::InsecureChannelCredentials());
 
     return 1; // return 1 if success, otherwise return -1
 }
@@ -79,7 +100,7 @@ IReply Client::processCommand(std::string& input)
 	// FOLLOW <username>
 	// UNFOLLOW <username>
 	// LIST
-    // TIMELINE
+    	// TIMELINE
 	//
 	// ------------------------------------------------------------
 	
