@@ -167,8 +167,11 @@ class SNSServiceImpl final : public SNSService::Service {
     string user = msg.username();
     User* u = existing_users[user];
     u->userStream = stream;
-    for (const Message& time_msg : u->timeline) {
-    	stream->Write(time_msg);
+    //for (const Message& time_msg : u->timeline) {
+    //	stream->Write(time_msg);
+    //}
+    for (auto it = u->timeline.rbegin(); it != u->timeline.rend(); it++) {
+    	stream->Write(*it);
     }
     
     lck.unlock();
@@ -176,6 +179,9 @@ class SNSServiceImpl final : public SNSService::Service {
     	lck.lock();
     	for (string followerStr : u->followers) {
     		User* follower = existing_users[followerStr];
+    		if (follower->timeline.size() >= 20) {		// show only 20 newest posts
+    			follower->timeline.pop_front();
+    		}
     		follower->timeline.push_back(msg);
     		if (follower->userStream != nullptr && followerStr != user) {
     			follower->userStream->Write(msg);
@@ -242,6 +248,10 @@ void terminationHandler(int sig) {
 	
 	outfile.close();
 	exit(1);
+}
+
+void readData() {
+	
 }
 
 int main(int argc, char** argv) {

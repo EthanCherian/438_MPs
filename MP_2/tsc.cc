@@ -158,7 +158,6 @@ IReply Client::processCommand(std::string& input)
 	if (command == "FOLLOW") {
 		req.add_arguments(user);	// user to be followed
 		stat = stub_->Follow(&cliCon, req, &rep);
-		ire.grpc_status = stat;
 		string m = rep.msg();
 		if (m == "doesn't exist") {
 			ire.comm_status = FAILURE_INVALID_USERNAME;
@@ -170,7 +169,6 @@ IReply Client::processCommand(std::string& input)
 	} else if (command == "UNFOLLOW") {
 		req.add_arguments(user);	// user to be unfollowed
 		stat = stub_->UnFollow(&cliCon, req, &rep);
-		ire.grpc_status = stat;
 		string m = rep.msg();
 		if (m == "doesn't exist") {
 			ire.comm_status = FAILURE_INVALID_USERNAME;
@@ -183,15 +181,14 @@ IReply Client::processCommand(std::string& input)
 		stat = stub_->List(&cliCon, req, &rep);
 		ire.all_users = {rep.all_users().begin(), rep.all_users().end()};
 		ire.following_users = {rep.following_users().begin(), rep.following_users().end()};
-		ire.grpc_status = stat;
 		ire.comm_status = (stat.ok()) ? SUCCESS : FAILURE_INVALID;
+	} else if (command == "TIMELINE") {
+		stat = Status();
+		ire.comm_status = SUCCESS;
 	}
     
+    ire.grpc_status = stat;
     return ire;
-}
-
-void streamHandler(std::shared_ptr<ClientReaderWriter<Message, Message>> stream, Message& res, bool& running) {
-	
 }
 
 void Client::processTimeline()
