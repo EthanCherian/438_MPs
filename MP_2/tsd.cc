@@ -4,6 +4,7 @@
 #include <google/protobuf/duration.pb.h>
 
 #include <fstream>
+#include <signal.h>
 #include <set>
 #include <mutex>
 #include <map>
@@ -85,7 +86,7 @@ class SNSServiceImpl final : public SNSService::Service {
     // ------------------------------------------------------------
     string user = request->username();
 	string followee = *(request->arguments().begin());	// user to follow
-    cout << "received follow request from " << user << " to " << followee << endl;
+	
     std::unique_lock<std::mutex> lck(mut);
     
     User* reqUser = existing_users[user];
@@ -210,18 +211,58 @@ void RunServer(std::string port_no) {
 	server->Wait();
 }
 
+void terminationHandler(int sig) {
+	std::ofstream outfile("users.txt", std::ios::trunc);
+	outfile << existing_users.size() << endl;
+	
+	for (auto it = existing_users.begin(); it != existing_users.end(); it++) {
+		User* user = it->second;
+		outfile << it->first << endl;		// write user's name
+		
+		std::ofstream userout(it->first+".txt", std::ios::trunc);		// file for individual user's information
+
+		// write timeline to file
+		userout << user->timeline.size() << endl;
+		for (auto& msg : user->timeline) {
+			auto t = msg.timestamp().seconds();
+			userout << msg.username() << " " << msg.msg() << " " << t << endl;
+		}
+		
+		// write followers to file
+		userout << user->followers.size() << endl;
+		for (auto& followerName : user->followers) userout << followerName << endl;
+		
+		// write following to file
+		userout << user->following.size() << endl;
+		for (auto& followingName : user->following) userout << followingName << endl;
+		
+		delete it->second;		// free allocated User struct
+		userout.close();
+	}
+	
+	outfile.close();
+	exit(1);
+}
+
 int main(int argc, char** argv) {
-  std::string port = "3010";
-  int opt = 0;
-  while ((opt = getopt(argc, argv, "p:")) != -1){
-    switch(opt) {
-      case 'p':
-          port = optarg;
-          break;
-      default:
-	      std::cerr << "Invalid Command Line Argument\n";
-    }
-  }
-  RunServer(port);
-  return 0;
+	struct sigaction interruptHandler;
+	interruptHandler.sa_handler = terminationHandler;
+	sigemptyset(&interruptHandler.sa_mask);
+	interruptHandler.sa_flags = 0;
+	
+	sigaction(SIGINT, &interruptHandler, NULL);
+
+	std::string port = "3010";
+	int opt = 0;
+	while ((opt = getopt(argc, argv, "p:")) != -1){
+	switch(opt) {
+	  case 'p':
+		  port = optarg;
+		  break;
+	  default:
+		  std::cerr << "Invalid Command Line Argument\n";
+	}
+	}
+	RunServer(port);
+	return 0;
 }
