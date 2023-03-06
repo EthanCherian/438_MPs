@@ -81,20 +81,20 @@ class SNSServiceImpl final : public SNSService::Service {
     string user = request->username();
 	string followee = *(request->arguments().begin());	// user to follow
     cout << "received follow request from " << user << " to " << followee << endl;
-    std::unique_lock<std::mutex> lock(mut);
+    std::unique_lock<std::mutex> lck(mut);
     
-    User* u = existing_users[user];
+    User* reqUser = existing_users[user];
     if (existing_users.count(followee) == 0) {		// followee doesn't exist
     	reply->set_msg("doesn't exist");
     	return Status::OK;			// can't return different status >:(
-    } else if (u->following.count(followee) != 0) {	// already following
+    } else if (reqUser->following.count(followee) != 0) {	// already following
     	reply->set_msg("already following");
     	return Status::OK;
     }
     
 	User* follUser = existing_users[followee];
 	follUser->followers.insert(user);
-	u->following.insert(followee);
+	reqUser->following.insert(followee);
 	reply->set_msg("all good");
     return Status::OK; 
   }
@@ -105,6 +105,26 @@ class SNSServiceImpl final : public SNSService::Service {
     // request from a user to unfollow one of his/her existing
     // followers
     // ------------------------------------------------------------
+    string user = request->username();
+    string unfollowee = *(request->arguments().begin());		// user to unfollow
+    std::unique_lock<std::mutex> lck(mut);
+    
+    User* reqUser = existing_users[user];
+    if (existing_users.count(unfollowee) == 0) {		// user doesn't exist
+    	reply->set_msg("doesn't exist");
+    	return Status::OK;
+    } else if (reqUser->following.count(unfollowee) == 0) {		// not following user
+    	reply->set_msg("invalid");
+    	return Status::OK;
+    } else if (user == unfollowee) {
+    	reply->set_msg("invalid");
+    	return Status::OK;
+    }
+    
+    User* unfolUser = existing_users[unfollowee];
+    unfolUser->followers.erase(user);
+    reqUser->following.erase(unfollowee);
+    reply->set_msg("all good");
     return Status::OK;
   }
   

@@ -160,7 +160,6 @@ IReply Client::processCommand(std::string& input)
 	if (command == "FOLLOW") {
 		req.add_arguments(user);	// user to be followed
 		stat = stub_->Follow(&cliCon, req, &rep);
-		cout << rep.msg() << endl;
 		ire.grpc_status = stat;
 		string m = rep.msg();
 		if (m == "doesn't exist") {
@@ -170,11 +169,18 @@ IReply Client::processCommand(std::string& input)
 		} else {
 			ire.comm_status = (stat.ok()) ? SUCCESS : FAILURE_INVALID;
 		}
-		if (stat.ok())			// update following users if successful
-			ire.following_users = { user };
 	} else if (command == "UNFOLLOW") {
-		cout << " in unfollow" << endl;
+		req.add_arguments(user);	// user to be unfollowed
 		stat = stub_->UnFollow(&cliCon, req, &rep);
+		ire.grpc_status = stat;
+		string m = rep.msg();
+		if (m == "doesn't exist") {
+			ire.comm_status = FAILURE_INVALID_USERNAME;
+		} else if (m == "invalid") {
+			ire.comm_status = FAILURE_INVALID_USERNAME;
+		} else {
+			ire.comm_status = (stat.ok()) ? SUCCESS : FAILURE_INVALID;
+		}
 	} else if (command == "LIST") {
 		stat = stub_->List(&cliCon, req, &rep);
 		ire.all_users = {rep.all_users().begin(), rep.all_users().end()};
