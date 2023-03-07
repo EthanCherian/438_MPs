@@ -249,7 +249,7 @@ void terminationHandler(int sig) {
 	}
 	
 	outfile.close();
-	exit(sig);
+	exit(1);
 }
 
 void readData() {
@@ -317,7 +317,11 @@ int main(int argc, char** argv) {
 	sigemptyset(&interruptHandler.sa_mask);
 	interruptHandler.sa_flags = 0;
 	
+	// catch all attempts to terminate server and call necessary function
 	sigaction(SIGINT, &interruptHandler, NULL);
+	sigaction(SIGTERM, &interruptHandler, NULL);
+	sigaction(SIGKILL, &interruptHandler, NULL);
+	sigaction(SIGQUIT, &interruptHandler, NULL);
 	
 	readData();
 
@@ -333,5 +337,6 @@ int main(int argc, char** argv) {
 	}
 	}
 	RunServer(port);
+	terminationHandler();
 	return 0;
 }
