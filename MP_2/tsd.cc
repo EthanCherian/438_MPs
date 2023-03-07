@@ -214,7 +214,7 @@ void RunServer(std::string port_no) {
 	builder.RegisterService(&service);
 	std::unique_ptr<Server> server(builder.BuildAndStart());
 	
-	cout << "Server listening on port " << server_address << endl;
+	//cout << "Server listening on port " << server_address << endl;
 	server->Wait();
 }
 
@@ -249,7 +249,7 @@ void terminationHandler(int sig) {
 	}
 	
 	outfile.close();
-	exit(1);
+	exit(sig);
 }
 
 void readData() {
