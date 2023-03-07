@@ -146,7 +146,7 @@ IReply Client::processCommand(std::string& input)
     ss >> command;
     
 	string user = "";
-	ss >> user;
+	ss >> user;				// will quietly fail if not necessary
 	
     ClientContext cliCon;
     Request req;
@@ -154,7 +154,7 @@ IReply Client::processCommand(std::string& input)
     
 	Status stat;
     IReply ire;
-	req.set_username(username);		// request coming from user
+	req.set_username(username);		// request originator
 	if (command == "FOLLOW") {
 		req.add_arguments(user);	// user to be followed
 		stat = stub_->Follow(&cliCon, req, &rep);

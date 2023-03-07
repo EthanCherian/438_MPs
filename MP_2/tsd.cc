@@ -69,10 +69,10 @@ class SNSServiceImpl final : public SNSService::Service {
     string user = request->username();
 	User* u = existing_users[user];
 	
-    for (auto it = existing_users.begin(); it != existing_users.end(); it++) {
+    for (auto it = existing_users.begin(); it != existing_users.end(); it++) {			// get list of all users in system
     	reply->add_all_users(it->first);
     }
-    for (auto follower_name : u->following) {
+    for (auto follower_name : u->following) {			// get list of all users being followed
     	reply->add_following_users(follower_name);
     }
     return Status::OK;
@@ -99,7 +99,7 @@ class SNSServiceImpl final : public SNSService::Service {
     }
     
 	User* follUser = existing_users[followee];
-	follUser->followers.insert(user);
+	follUser->followers.insert(user);			// establish two-way relationship between following and follower
 	reqUser->following.insert(followee);
 	reply->set_msg("all good");
     return Status::OK; 
@@ -128,7 +128,7 @@ class SNSServiceImpl final : public SNSService::Service {
     }
     
     User* unfolUser = existing_users[unfollowee];
-    unfolUser->followers.erase(user);
+    unfolUser->followers.erase(user);			// establish two-way relationship between following and follower
     reqUser->following.erase(unfollowee);
     reply->set_msg("all good");
     return Status::OK;
@@ -183,14 +183,15 @@ class SNSServiceImpl final : public SNSService::Service {
     		if (follower->timeline.size() >= 20) {		// show only 20 *newest* posts
     			follower->timeline.pop_front();
     		}
-    		follower->timeline.push_back(msg);
-    		if (follower->userStream != nullptr && followerStr != user) {
-    			follower->userStream->Write(msg);
+    		follower->timeline.push_back(msg);		// write to follower's timeline
+    		if (follower->userStream != NULL && followerStr != user) {
+    			follower->userStream->Write(msg);	// write to stdout, but not to our own
     		}
     	}
     	lck.unlock();
     }
     
+    // will reach here only if client terminated their program
     lck.lock();
     active_users.erase(user);		// current user is no longer active
     u->userStream = NULL;			// invalidate stream
@@ -317,7 +318,7 @@ int main(int argc, char** argv) {
 	sigemptyset(&interruptHandler.sa_mask);
 	interruptHandler.sa_flags = 0;
 	
-	// catch all attempts to terminate server and call necessary function
+	// catch all attempts to terminate server and call terminationHandler
 	sigaction(SIGINT, &interruptHandler, NULL);
 	sigaction(SIGTERM, &interruptHandler, NULL);
 	sigaction(SIGKILL, &interruptHandler, NULL);
@@ -337,6 +338,7 @@ int main(int argc, char** argv) {
 	}
 	}
 	RunServer(port);
-	terminationHandler();
+	// will reach here only when server is terminated
+	terminationHandler();		// if somehow avoided, make sure to save progress before termination
 	return 0;
 }
