@@ -219,7 +219,7 @@ void RunServer(std::string port_no) {
 	server->Wait();
 }
 
-void terminationHandler(int sig) {
+void terminationHandler() {
 	std::ofstream outfile("users.txt", std::ios::trunc);
 	outfile << existing_users.size() << endl;
 	
