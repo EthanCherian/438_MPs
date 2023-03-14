@@ -219,7 +219,7 @@ void RunServer(std::string port_no) {
 	server->Wait();
 }
 
-void terminationHandler() {
+void terminationHandler(int sig) {
 	std::ofstream outfile("users.txt", std::ios::trunc);
 	outfile << existing_users.size() << endl;
 	
@@ -339,6 +339,6 @@ int main(int argc, char** argv) {
 	}
 	RunServer(port);
 	// will reach here only when server is terminated
-	terminationHandler();		// if somehow avoided, make sure to save progress before termination
+	terminationHandler(0);		// if somehow avoided, make sure to save progress before termination
 	return 0;
 }
