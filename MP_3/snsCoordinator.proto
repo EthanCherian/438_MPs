@@ -14,9 +14,14 @@ service SNSCoordinator {
 
 // Server Types - useful for HeartBeat
 enum ServerType {
-	MASTER = 1;
-	SLAVE = 2;
-	SYNC = 3;
+	MASTER = 0;
+	SLAVE = 1;
+	SYNC = 2;
+}
+// whether server is active or not
+enum ActiveStatus {
+	ACTIVE = 0;
+	INACTIVE = 1;
 }
 
 
@@ -33,6 +38,7 @@ message Server {
 	string port_num = 2;
 	int32 server_id = 3; // is equivalent to cluster ID
 	ServerType server_type = 4;
+	ActiveStatus active_status = 5;
 }
 
 
