@@ -7,6 +7,7 @@
 #include <glog/logging.h>
 #include <google/protobuf/util/time_util.h>
 #include <grpc++/grpc++.h>
+#include <thread>
 #include <iostream>
 #include <memory>
 #include <stdlib.h>
@@ -42,14 +43,81 @@ struct Cluster {
 
 std::unordered_map<int, Cluster*> clusters;
 
+std::mutex c_lock;
+
+std::chrono::system_clock::time_point chronoGetNow() {
+	return std::chrono::system_clock::now();
+}
+
+google::protobuf::Timestamp* protoGetNow() {
+	google::protobuf::Timestamp* now = new google::protobuf::Timestamp();
+	now->set_seconds(time(NULL));
+	now->set_nanos(0);
+	return now;
+}
+
+std::chrono::system_clock::time_point convertToTimePoint(const google::protobuf::Timestamp& timestamp) {
+	std::chrono::system_clock::time_point tp = std::chrono::system_clock::from_time_t(timestamp.seconds());
+	tp += std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::nanoseconds(timestamp.nanos()));
+	return tp;
+}
+
+void CheckHeartbeats() {
+	while (true) {
+		std::this_thread::sleep_for(std::chrono::seconds(10));
+
+		std::unique_lock<std::mutex> lock(c_lock);
+		for (auto& cluster : clusters) {
+			Server* master = cluster.second->master;
+			if (master->active_status() == ActiveStatus::ACTIVE &&
+				chronoGetNow() - convertToTimePoint(master->last_heartbeat()) > std::chrono::seconds(20)) {
+				master->set_active_status(ActiveStatus::INACTIVE);
+			}
+
+			auto slave = cluster.second->slave;
+			if (slave->active_status() == ActiveStatus::ACTIVE &&
+				chronoGetNow() - convertToTimePoint(slave->last_heartbeat()) > std::chrono::seconds(10)) {
+				slave->set_active_status(ActiveStatus::INACTIVE);
+			}
+		}
+		lock.unlock();
+	}
+}
+
 class SNSCoordinatorImpl final : public SNSCoordinator::Service {
     Status HandleHeartBeats(ServerContext* context, ServerReaderWriter<Heartbeat, Heartbeat>* stream) override {
-        // Heartbeat hb;
-        // while (stream->Read(&hb)) {
-        //     log(INFO, hb.DebugString());
-        // }
-        return Status::OK;
-    }
+		Heartbeat hb;
+		while (stream->Read(&hb)) {
+			std::unique_lock<std::mutex> lock(c_lock);
+			int cluster_id = hb.server_id();
+			if (clusters.find(cluster_id) != clusters.end()) {
+				Server* server = nullptr;
+				switch (hb.server_type()) {
+					case ServerType::MASTER:
+						server = clusters[cluster_id]->master;
+						break;
+					case ServerType::SLAVE:
+						server = clusters[cluster_id]->slave;
+						break;
+					case ServerType::SYNC:
+						server = clusters[cluster_id]->fsync;
+						break;
+					default:
+						break;
+				}
+				if (server != nullptr) {
+					server->set_server_ip(hb.server_ip());
+					server->set_port_num(hb.server_port());
+					server->set_server_id(hb.server_id());
+					server->set_server_type(hb.server_type());
+					server->set_active_status(ActiveStatus::ACTIVE);
+					server->set_allocated_last_heartbeat(protoGetNow());
+				}
+			}
+			lock.unlock();
+		}
+		return Status::OK;
+	}
 
     Status GetFollowSyncsForUsers(ServerContext* context, const Users* users, FollowSyncs* fsyncs) override {
         for (auto user : users->users()) {      // consider all user ids
@@ -113,4 +181,6 @@ int main(int argc, char** argv) {
                 break;
         }
     }
+
+    RunCoordinator(port);
 }

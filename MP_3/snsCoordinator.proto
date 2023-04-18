@@ -39,6 +39,7 @@ message Server {
 	int32 server_id = 3; // is equivalent to cluster ID
 	ServerType server_type = 4;
 	ActiveStatus active_status = 5;
+	google.protobuf.Timestamp last_heartbeat = 6;
 }
 
 

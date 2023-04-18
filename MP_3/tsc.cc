@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
     std::string client_port = "3010";
     
     int opt = 0;
-    while ((opt = getopt(argc, argv, "h:u:p:")) != -1){
+    while ((opt = getopt(argc, argv, "cip:id:p:cp:")) != -1){
         switch(opt) {
             case 'cip':
                 coord_ip = optarg;break;
