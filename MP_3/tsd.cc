@@ -202,34 +202,34 @@ class SNSServiceImpl final : public SNSService::Service {
         //Read the last up-to-20 lines (newest 20 messages) from userfollowing.txt
         while(getline(in, line)){
           if(c->following_file_size > 20){
-	    if(count < c->following_file_size-20){
+	          if(count < c->following_file_size-20){
               count++;
-	      continue;
+	            continue;
             }
           }
           newest_twenty.push_back(line);
         }
         Message new_msg; 
- 	//Send the newest messages to the client to be displayed
-	for(int i = 0; i<newest_twenty.size(); i++){
-	  new_msg.set_msg(newest_twenty[i]);
-          stream->Write(new_msg);
-        }    
-        continue;
+        //Send the newest messages to the client to be displayed
+        for(int i = 0; i<newest_twenty.size(); i++){
+          new_msg.set_msg(newest_twenty[i]);
+                stream->Write(new_msg);
+              }    
+              continue;
       }
       //Send the message to each follower's stream
       std::vector<Client*>::const_iterator it;
       for(it = c->client_followers.begin(); it!=c->client_followers.end(); it++){
         Client *temp_client = *it;
       	if(temp_client->stream!=0 && temp_client->connected)
-	  temp_client->stream->Write(message);
+	        temp_client->stream->Write(message);
         //For each of the current user's followers, put the message in their following.txt file
         std::string temp_username = temp_client->username;
         std::string temp_file = temp_username + "following.txt";
-	std::ofstream following_file(temp_file,std::ios::app|std::ios::out|std::ios::in);
-	following_file << fileinput;
+        std::ofstream following_file(temp_file,std::ios::app|std::ios::out|std::ios::in);
+        following_file << fileinput;
         temp_client->following_file_size++;
-	std::ofstream user_file(temp_username + ".txt",std::ios::app|std::ios::out|std::ios::in);
+	      std::ofstream user_file(temp_username + ".txt",std::ios::app|std::ios::out|std::ios::in);
         user_file << fileinput;
       }
     }
@@ -255,9 +255,9 @@ void RunServer(std::string port_no) {
 }
 
 int main(int argc, char** argv) {
-
-  
-  
+  std::string coord_ip = "0.0.0.0";
+  std::string coord_port = "3011";
+  std::string id = "0";
   std::string port = "3010";
   
   int opt = 0;

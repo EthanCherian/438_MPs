@@ -52,9 +52,16 @@ class SNSCoordinatorImpl final : public SNSCoordinator::Service {
     }
 
     Status GetFollowSyncsForUsers(ServerContext* context, const Users* users, FollowSyncs* fsyncs) override {
-        for (User user : users) {
-            int clusterId = (user.user_id() % 3) + 1;
-            fsyncs->add_cluster_ids(clusterId);
+        for (auto user : users->users()) {      // consider all user ids
+            int clusterId = (user % 3) + 1;
+            // get appropriate follower synchronizer server
+            auto fsync = clusters[clusterId]->fsync;
+            // add fields to reply
+            fsyncs->add_users(user);
+            fsyncs->add_follow_syncs(clusterId);
+            fsyncs->add_follow_sync_ip(fsync->server_ip());
+            fsyncs->add_port_nums(fsync->port_num());
+        }
         return Status::OK;
     }
 

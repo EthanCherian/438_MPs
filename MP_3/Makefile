@@ -33,6 +33,9 @@ tsd: sns.pb.o sns.grpc.pb.o snsCoordinator.pb.o snsCoordinator.grpc.pb.o snsFoll
 coordinator: sns.pb.o sns.grpc.pb.o snsCoordinator.pb.o snsCoordinator.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o coordinator.o
 	$(CXX) $^ $(LDFLAGS) -g -o $@
 
+followsync: sns.pb.o sns.grpc.pb.o snsCoordinator.pb.o snsCoordinator.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o followsync.o
+	$(CXX) $^ $(LDFLAGS) -g -o $@
+
 .PRECIOUS: %.grpc.pb.cc
 %.grpc.pb.cc: %.proto
 	$(PROTOC) -I.:/home/csce438/grpc/third_party/protobuf/src --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN_PATH) $<
@@ -42,7 +45,7 @@ coordinator: sns.pb.o sns.grpc.pb.o snsCoordinator.pb.o snsCoordinator.grpc.pb.o
 	$(PROTOC) -I.:/home/csce438/grpc/third_party/protobuf/src --cpp_out=. $<
 
 clean:
-	rm -f *.txt *.o *.pb.cc *.pb.h tsc tsd coordinator
+	rm -f *.txt *.o *.pb.cc *.pb.h tsc tsd coordinator followsync
 
 
 # The following is to test your system and ensure a smoother experience.

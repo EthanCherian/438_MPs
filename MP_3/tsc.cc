@@ -10,6 +10,7 @@
 #define log(severity, msg) LOG(severity) << msg; google::FlushLogFiles(google::severity); 
 
 #include "sns.grpc.pb.h"
+#include "snsCoordinator.grpc.pb.h"
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::ClientReader;
@@ -21,6 +22,9 @@ using csce438::ListReply;
 using csce438::Request;
 using csce438::Reply;
 using csce438::SNSService;
+using snsCoordinator::SNSCoordinator;
+using snsCoordinator::User;
+using snsCoordinator::Server;
 
 Message MakeMessage(const std::string& username, const std::string& msg) {
     Message m;
@@ -36,22 +40,21 @@ Message MakeMessage(const std::string& username, const std::string& msg) {
 class Client : public IClient
 {
     public:
-        Client(const std::string& hname,
-               const std::string& uname,
-               const std::string& p)
-            :hostname(hname), username(uname), port(p)
-            {}
+        Client(const std::string& cip, const std::string& cp, const std::string& u, const std::string& p)
+            : coord_ip(cip), coord_port(cp), username(u), client_port(p) {};
     protected:
         virtual int connectTo();
         virtual IReply processCommand(std::string& input);
         virtual void processTimeline();
     private:
-        std::string hostname;
+        std::string coord_ip;
+        std::string coord_port;
         std::string username;
-        std::string port;
+        std::string client_port;
         // You can have an instance of the client stub
         // as a member variable.
-        std::unique_ptr<SNSService::Stub> stub_;
+        std::unique_ptr<SNSService::Stub> server_stub_;
+        std::unique_ptr<SNSCoordinator::Stub> coordinator_stub_;
 
         IReply Login();
         IReply List();
@@ -64,19 +67,22 @@ class Client : public IClient
 
 int main(int argc, char** argv) {
 
-    std::string hostname = "localhost";
+    std::string coord_ip = "8.8.8.8";
+    std::string coord_port = "8080";
     std::string username = "default";
-    std::string port = "3010";
+    std::string client_port = "3010";
     
     int opt = 0;
     while ((opt = getopt(argc, argv, "h:u:p:")) != -1){
         switch(opt) {
-            case 'h':
-                hostname = optarg;break;
-            case 'u':
+            case 'cip':
+                coord_ip = optarg;break;
+            case 'id':
                 username = optarg;break;
+            case 'cp':
+                coord_port = optarg;break;
             case 'p':
-                port = optarg;break;
+                client_port = optarg;break;
             default:
                 std::cerr << "Invalid Command Line Argument\n";
         }
@@ -84,7 +90,7 @@ int main(int argc, char** argv) {
     std::string log_file_name = std::string("client-") + username;
     google::InitGoogleLogging(log_file_name.c_str());
     log(INFO, "Logging Initialized. Client starting...");
-    Client myc(hostname, username, port);
+    Client myc(coord_ip, coord_port, username, client_port);
     // You MUST invoke "run_client" function to start business logic
     myc.run_client();
 
@@ -102,8 +108,23 @@ int Client::connectTo()
     // a member variable in your own Client class.
     // Please refer to gRpc tutorial how to create a stub.
 	// ------------------------------------------------------------
-    std::string login_info = hostname + ":" + port;
-    stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
+    std::string coord_info = coord_ip + ":" + coord_port;
+    coordinator_stub_ = std::unique_ptr<SNSCoordinator::Stub>(
+        SNSCoordinator::NewStub(
+		grpc::CreateChannel(
+			coord_info, grpc::InsecureChannelCredentials()))
+    );
+    ClientContext con;
+    User user;
+    user.set_user_id(std::stoi(username));
+    Server server;
+    Status status = coordinator_stub_->GetServer(&con, user, &server);
+    if (!status.ok()) {
+        return -1;
+    }
+
+    std::string login_info = server.server_ip() + ":" + server.port_num();
+    server_stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
                grpc::CreateChannel(
                     login_info, grpc::InsecureChannelCredentials())));
 
@@ -148,7 +169,7 @@ IReply Client::processCommand(std::string& input)
     //     // some codes for creating/initializing parameters for
     //     // service method
     //     IReply ire;
-    //     grpc::Status status = stub_->Join(&context, /* some parameters */);
+    //     grpc::Status status = server_stub_->Join(&context, /* some parameters */);
     //     ire.grpc_status = status;
     //     if (status.ok()) {
     //         ire.comm_status = SUCCESS;
@@ -227,7 +248,7 @@ IReply Client::List() {
     //Context for the client
     ClientContext context;
 
-    Status status = stub_->List(&context, request, &list_reply);
+    Status status = server_stub_->List(&context, request, &list_reply);
     IReply ire;
     ire.grpc_status = status;
     //Loop through list_reply.all_users and list_reply.following_users
@@ -254,7 +275,7 @@ IReply Client::Follow(const std::string& username2) {
     Reply reply;
     ClientContext context;
 
-    Status status = stub_->Follow(&context, request, &reply);
+    Status status = server_stub_->Follow(&context, request, &reply);
     IReply ire; ire.grpc_status = status;
     if (reply.msg() == "unkown user name") {
         ire.comm_status = FAILURE_INVALID_USERNAME;
@@ -280,7 +301,7 @@ IReply Client::UnFollow(const std::string& username2) {
 
     ClientContext context;
 
-    Status status = stub_->UnFollow(&context, request, &reply);
+    Status status = server_stub_->UnFollow(&context, request, &reply);
     IReply ire;
     ire.grpc_status = status;
     if (reply.msg() == "unknown follower username") {
@@ -302,7 +323,7 @@ IReply Client::Login() {
     Reply reply;
     ClientContext context;
 
-    Status status = stub_->Login(&context, request, &reply);
+    Status status = server_stub_->Login(&context, request, &reply);
 
     IReply ire;
     ire.grpc_status = status;
@@ -318,7 +339,7 @@ void Client::Timeline(const std::string& username) {
     ClientContext context;
 
     std::shared_ptr<ClientReaderWriter<Message, Message>> stream(
-            stub_->Timeline(&context));
+            server_stub_->Timeline(&context));
 
     //Thread used to read chat messages and send them to the server
     std::thread writer([username, stream]() {
