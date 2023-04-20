@@ -91,6 +91,12 @@ int find_user(std::string username){
   return -1;
 }
 
+std::string coord_port;
+std::string coord_ip;
+int username;
+std::string port;
+std::string type;
+
 class SNSServiceImpl final : public SNSService::Service {
   
   Status List(ServerContext* context, const Request* request, ListReply* list_reply) override {
@@ -240,8 +246,8 @@ class SNSServiceImpl final : public SNSService::Service {
 
 };
 
-void RunServer(std::string port_no) {
-  std::string server_address = "0.0.0.0:"+port_no;
+void RunServer(std::string cip, std::string cp, std::string id, std::string p, std::string t) {
+  std::string server_address = "0.0.0.0:"+p;
   SNSServiceImpl service;
 
   ServerBuilder builder;
@@ -255,25 +261,40 @@ void RunServer(std::string port_no) {
 }
 
 int main(int argc, char** argv) {
-  std::string coord_ip = "0.0.0.0";
-  std::string coord_port = "3011";
-  std::string id = "0";
-  std::string port = "3010";
-  
+  std::string cip = "8.8.8.8";
+  std::string cp = "8080";
+  std::string id = "default";
+  std::string p = "3010";
+  std::string t = "default";
+
   int opt = 0;
-  while ((opt = getopt(argc, argv, "p:")) != -1){
-    switch(opt) {
-      case 'p':
-          port = optarg;break;
-      default:
-	  std::cerr << "Invalid Command Line Argument\n";
-    }
+  while ((opt = getopt(argc, argv, "cip:cp:p:id:t:")) != -1){
+      switch(opt) {
+          case 'cip':
+              cip = optarg;break;
+          case 'id':
+              id = optarg;break;
+          case 'cp':
+              cp = optarg;break;
+          case 'p':
+              p = optarg;break;
+          case 't':
+              t = optarg;break;
+          default:
+              std::cerr << "Invalid Command Line Argument\n";
+      }
   }
-  
+
+  coord_ip = cip;
+  coord_port = cp;
+  username = stoi(id);
+  port = p;
+  type = t;
+
   std::string log_file_name = std::string("server-") + port;
     google::InitGoogleLogging(log_file_name.c_str());
     log(INFO, "Logging Initialized. Server starting...");
-  RunServer(port);
+  RunServer(cip, cp, id, p, t);
 
   return 0;
 }

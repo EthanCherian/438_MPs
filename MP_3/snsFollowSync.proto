@@ -15,6 +15,7 @@ service SNSFollowSync {
 message Relation {
     int32 followee = 1;
     int32 follower = 2;
+    uint64 follow_time = 3;
 }
 
 

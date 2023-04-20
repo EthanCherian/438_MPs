@@ -18,6 +18,7 @@
 	google::FlushLogFiles(google::severity);
 
 #include "snsCoordinator.grpc.pb.h"
+#include "helpers.h"
 
 using grpc::ServerBuilder;
 using grpc::ServerContext;
@@ -44,23 +45,6 @@ struct Cluster {
 std::unordered_map<int, Cluster*> clusters;
 
 std::mutex c_lock;
-
-std::chrono::system_clock::time_point chronoGetNow() {
-	return std::chrono::system_clock::now();
-}
-
-google::protobuf::Timestamp* protoGetNow() {
-	google::protobuf::Timestamp* now = new google::protobuf::Timestamp();
-	now->set_seconds(time(NULL));
-	now->set_nanos(0);
-	return now;
-}
-
-std::chrono::system_clock::time_point convertToTimePoint(const google::protobuf::Timestamp& timestamp) {
-	std::chrono::system_clock::time_point tp = std::chrono::system_clock::from_time_t(timestamp.seconds());
-	tp += std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::nanoseconds(timestamp.nanos()));
-	return tp;
-}
 
 void CheckHeartbeats() {
 	while (true) {
