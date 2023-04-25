@@ -1,22 +1,22 @@
+#include <ctime>
+#include <glog/logging.h>
+#include <grpc++/grpc++.h>
 #include <iostream>
 #include <string>
-#include <ctime>
 #include <vector>
-#include <grpc++/grpc++.h>
-
-#include<glog/logging.h>
-#define log(severity, msg) LOG(severity) << msg; google::FlushLogFiles(google::severity); 
+#define log(severity, msg) \
+	LOG(severity) << msg;  \
+	google::FlushLogFiles(google::severity);
 
 #define MAX_DATA 256
 
-enum IStatus
-{
-    SUCCESS,
-    FAILURE_ALREADY_EXISTS,
-    FAILURE_NOT_EXISTS,
-    FAILURE_INVALID_USERNAME,
-    FAILURE_INVALID,
-    FAILURE_UNKNOWN
+enum IStatus {
+	SUCCESS,
+	FAILURE_ALREADY_EXISTS,
+	FAILURE_NOT_EXISTS,
+	FAILURE_INVALID_USERID,
+	FAILURE_INVALID,
+	FAILURE_UNKNOWN
 };
 
 /*
@@ -26,7 +26,7 @@ enum IStatus
  * declare a variable of IReply structure and set based on
  * the type of command and the result.
  *
- * - FOLLOW/UNFOLLOW/TIMELINE command:
+ * - FOLLOW/TIMELINE command:
  * IReply ireply;
  * ireply.grpc_status = return value of a service method
  * ireply.comm_status = one of values in IStatus enum
@@ -41,68 +41,66 @@ enum IStatus
  * This structure is not for communicating between server and client.
  * You need to design your own rules for the communication.
  */
-struct IReply
-{
-    grpc::Status grpc_status;
-    enum IStatus comm_status;
-    std::vector<std::string> all_users;
-    std::vector<std::string> followers;
+struct IReply {
+	grpc::Status grpc_status;
+	enum IStatus comm_status;
+	std::string server_info;
+	std::vector<std::string> all_users;
+	std::vector<std::string> followers;
 };
 
-class IClient
-{
-    public:
-        void run_client() { run(); }
+class IClient {
+public:
+	void run_client() { run(); }
 
-    protected:
-        /*
-         * Pure virtual functions to be implemented by students
-         */
-        virtual int connectTo() = 0;
-        virtual IReply processCommand(std::string& cmd) = 0;
-        virtual void processTimeline() = 0;
+protected:
+	/*
+	 * Pure virtual functions to be implemented by students
+	 */
+	virtual IReply connectTo() = 0;
+	virtual IReply processCommand(std::string& cmd) = 0;
+	virtual void processTimeline() = 0;
 
-    private:
-        void run();
-        void displayTitle() const;
-        std::string getCommand() const;
-        void displayCommandReply(const std::string& comm, const IReply& reply) const;
-        void toUpperCase(std::string& str) const;
+private:
+	void run();
+	void displayTitle() const;
+	std::string getCommand() const;
+	void displayCommandReply(const std::string& comm, const IReply& reply) const;
+	void toUpperCase(std::string& str) const;
 };
 
-void IClient::run()
-{
-    int ret = connectTo();
-    if (ret < 0) {
-        std::cout << "connection failed: " << ret << std::endl;
-        exit(1);
-    }
-    displayTitle();
-    while (1) {
-        std::string cmd = getCommand();
-        IReply reply = processCommand(cmd);
-        displayCommandReply(cmd, reply);
-        if (reply.grpc_status.ok() && reply.comm_status == SUCCESS
-                && cmd == "TIMELINE") {
-            std::cout << "Now you are in the timeline" << std::endl;
-            processTimeline();
-        }
-    }
+void IClient::run() {
+	auto ret = connectTo();
+
+	if (!ret.grpc_status.ok()) {
+		log(ERROR, "Connection failed to " << ret.server_info);
+		exit(1);
+	} else {
+		log(INFO, "Successfully connected to " << ret.server_info);
+	}
+
+	displayTitle();
+	while (1) {
+		std::string cmd = getCommand();
+		IReply reply = processCommand(cmd);
+		displayCommandReply(cmd, reply);
+		if (reply.grpc_status.ok() && reply.comm_status == SUCCESS && cmd == "TIMELINE") {
+			std::cout << "Now you are in the timeline" << std::endl;
+			processTimeline();
+		}
+	}
 }
 
-void IClient::displayTitle() const
-{
-    std::cout << "\n========= TINY SNS CLIENT =========\n";
-    std::cout << " Command Lists and Format:\n";
-    std::cout << " FOLLOW <username>\n";
-    std::cout << " UNFOLLOW <username>\n";
-    std::cout << " LIST\n";
-    std::cout << " TIMELINE\n";
-    std::cout << "=====================================\n";
+void IClient::displayTitle() const {
+	std::cout << "\n========= TINY SNS CLIENT =========\n";
+	std::cout << " Command Lists and Format:\n";
+	std::cout << " FOLLOW <user_id>\n";
+	std::cout << " LIST\n";
+	std::cout << " TIMELINE\n";
+	std::cout << "=====================================\n";
 }
 
-std::string IClient::getCommand() const
-{
+std::string IClient::getCommand() const {
 	std::string input;
 	while (1) {
 		std::cout << "Cmd> ";
@@ -111,11 +109,11 @@ std::string IClient::getCommand() const
 		if (index != std::string::npos) {
 			std::string cmd = input.substr(0, index);
 			toUpperCase(cmd);
-			if(input.length() == index+1){
+			if (input.length() == index + 1) {
 				std::cout << "Invalid Input -- No Arguments Given\n";
 				continue;
 			}
-			std::string argument = input.substr(index+1, (input.length()-index));
+			std::string argument = input.substr(index + 1, (input.length() - index));
 			input = cmd + " " + argument;
 		} else {
 			toUpperCase(input);
@@ -129,41 +127,40 @@ std::string IClient::getCommand() const
 	return input;
 }
 
-void IClient::displayCommandReply(const std::string& comm, const IReply& reply) const
-{
+void IClient::displayCommandReply(const std::string& comm, const IReply& reply) const {
 	if (reply.grpc_status.ok()) {
 		switch (reply.comm_status) {
 			case SUCCESS:
-                std::cout << "Command completed successfully\n";
+				std::cout << "Command completed successfully\n";
 				if (comm == "LIST") {
 					std::cout << "All users: ";
-                    for (std::string room : reply.all_users) {
-                        std::cout << room << ", ";
-                    }
+					for (std::string room : reply.all_users) {
+						std::cout << room << ", ";
+					}
 					std::cout << "\nFollowers: ";
-                    for (std::string room : reply.followers) {
-                        std::cout << room << ", ";
-                    }
-                    std::cout << std::endl;
+					for (std::string room : reply.followers) {
+						std::cout << room << ", ";
+					}
+					std::cout << std::endl;
 				}
 				break;
 			case FAILURE_ALREADY_EXISTS:
-                std::cout << "Input username already exists, command failed\n";
+				std::cout << "Input user_id already exists, command failed\n";
 				break;
 			case FAILURE_NOT_EXISTS:
-                std::cout << "Input username does not exists, command failed\n";
+				std::cout << "Input user_id does not exists, command failed\n";
 				break;
-			case FAILURE_INVALID_USERNAME:
-                std::cout << "Command failed with invalid username\n";
+			case FAILURE_INVALID_USERID:
+				std::cout << "Command failed with invalid user_id\n";
 				break;
 			case FAILURE_INVALID:
-                std::cout << "Command failed with invalid command\n";
+				std::cout << "Command failed with invalid command\n";
 				break;
 			case FAILURE_UNKNOWN:
-                std::cout << "Command failed with unknown reason\n";
+				std::cout << "Command failed with unknown reason\n";
 				break;
 			default:
-                std::cout << "Invalid status\n";
+				std::cout << "Invalid status\n";
 				break;
 		}
 	} else {
@@ -171,36 +168,33 @@ void IClient::displayCommandReply(const std::string& comm, const IReply& reply) 
 	}
 }
 
-void IClient::toUpperCase(std::string& str) const
-{
-    std::locale loc;
-    for (std::string::size_type i = 0; i < str.size(); i++)
-        str[i] = toupper(str[i], loc);
+void IClient::toUpperCase(std::string& str) const {
+	std::locale loc;
+	for (std::string::size_type i = 0; i < str.size(); i++)
+		str[i] = toupper(str[i], loc);
 }
 
 /*
  * get/displayPostMessage functions will be called in chatmode
  */
-std::string getPostMessage()
-{
-    char buf[MAX_DATA];
-    while (1) {
-	    fgets(buf, MAX_DATA, stdin);
-	    if (buf[0] != '\n')  break;
-    }
+std::string getPostMessage() {
+	char buf[MAX_DATA];
+	while (1) {
+		fgets(buf, MAX_DATA, stdin);
+		if (buf[0] != '\n') break;
+	}
 
-    std::string message(buf);
-    return message;
+	std::string message(buf);
+	return message;
 }
 
-void displayPostMessage(const std::string& sender, const std::string& message, std::time_t& time)
-{
-    std::string t_str(std::ctime(&time));
-    t_str[t_str.size()-1] = '\0';
-    std::cout << sender << " (" << t_str << ") >> " << message << std::endl;
+void displayPostMessage(const std::string& sender, const std::string& message, std::time_t& time) {
+	std::string t_str(std::ctime(&time));
+	t_str[t_str.size() - 1] = '\0';
+	std::cout << message << std::endl;
 }
 
-void displayReConnectionMessage(const std::string& host, const std::string & port) {
-    std::cout << "Reconnecting to " << host << ":" << port << "..." << std::endl;
-    log(INFO, "Reconnecting to " + host + ":" + port + "...");
+void displayReConnectionMessage(const std::string& server_info) {
+	std::cout << "Reconnecting to " << server_info << "..." << std::endl;
+	log(INFO, "Reconnecting to " + server_info + "...");
 }

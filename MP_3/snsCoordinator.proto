@@ -3,28 +3,29 @@ syntax = "proto3";
 package snsCoordinator;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
 
 service SNSCoordinator {
 	rpc HandleHeartBeats (stream Heartbeat) returns (stream Heartbeat) {}
 	rpc GetFollowSyncsForUsers (Users) returns (FollowSyncs) {}
 	rpc GetServer (User) returns (Server) {}
 	rpc GetSlave (ClusterId) returns (Server) {} // For master to communicate with slave
+	rpc CheckUserStatus (User) returns (ClusterId) {}
 }
-
 
 // Server Types - useful for HeartBeat
 enum ServerType {
-	MASTER = 0;
-	SLAVE = 1;
-	SYNC = 2;
+	NONE = 0;
+	MASTER = 1;
+	SLAVE = 2;
+	SYNC = 3;
 }
-// whether server is active or not
+
+// active status for servers and users
 enum ActiveStatus {
-	ACTIVE = 0;
-	INACTIVE = 1;
+	INACTIVE = 0;
+	ACTIVE = 1;
 }
-
-
 
 // 	Resolving server
 message User {
@@ -33,6 +34,7 @@ message User {
 message ClusterId {
 	int32 cluster = 1;
 }
+
 message Server {
 	string server_ip = 1;
 	string port_num = 2;
@@ -42,21 +44,18 @@ message Server {
 	google.protobuf.Timestamp last_heartbeat = 6;
 }
 
-
-
 // Encapsulating multiple requests into one to avoid to many requests to co-ordinator.
 // This information can be requested only if not available already. Ex: If F1 already knows F2 is handling U2, skip adding U2 in the request.
 message Users {
 	repeated int32 users = 1;
 }
+
 message FollowSyncs {
 	repeated int32 users = 1;
 	repeated int32 follow_syncs = 2;
 	repeated string follow_sync_ip = 3;
 	repeated string port_nums = 4;
 }
-
-
 
 // Heartbeat stream
 message Heartbeat {

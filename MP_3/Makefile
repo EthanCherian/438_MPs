@@ -16,24 +16,18 @@ PROTOC = protoc
 GRPC_CPP_PLUGIN = grpc_cpp_plugin
 GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
 
-all: system-check tsc tsd coordinator followsync
+all: system-check tsc tsd coordinator synchronizer
 
-# tsc: sns.pb.o sns.grpc.pb.o tsc.o
-# 	$(CXX) $^ $(LDFLAGS) -g -o $@
-
-# tsd: sns.pb.o sns.grpc.pb.o tsd.o
-# 	$(CXX) $^ $(LDFLAGS) -g -o $@
-
-tsc: sns.pb.o sns.grpc.pb.o snsCoordinator.pb.o snsCoordinator.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o tsc.o
+tsc: snsCoordinator.pb.o snsCoordinator.grpc.pb.o sns.pb.o sns.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o tsc.o
 	$(CXX) $^ $(LDFLAGS) -g -o $@
 
-tsd: sns.pb.o sns.grpc.pb.o snsCoordinator.pb.o snsCoordinator.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o tsd.o
+tsd: snsCoordinator.pb.o snsCoordinator.grpc.pb.o sns.pb.o sns.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o tsd.o
 	$(CXX) $^ $(LDFLAGS) -g -o $@
 
-coordinator: sns.pb.o sns.grpc.pb.o snsCoordinator.pb.o snsCoordinator.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o coordinator.o
+coordinator: snsCoordinator.pb.o snsCoordinator.grpc.pb.o sns.pb.o sns.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o coordinator.o
 	$(CXX) $^ $(LDFLAGS) -g -o $@
 
-followsync: sns.pb.o sns.grpc.pb.o snsCoordinator.pb.o snsCoordinator.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o followsync.o
+synchronizer: snsCoordinator.pb.o snsCoordinator.grpc.pb.o sns.pb.o sns.grpc.pb.o snsFollowSync.pb.o snsFollowSync.grpc.pb.o synchronizer.o
 	$(CXX) $^ $(LDFLAGS) -g -o $@
 
 .PRECIOUS: %.grpc.pb.cc
@@ -44,8 +38,11 @@ followsync: sns.pb.o sns.grpc.pb.o snsCoordinator.pb.o snsCoordinator.grpc.pb.o 
 %.pb.cc: %.proto
 	$(PROTOC) -I.:/home/csce438/grpc/third_party/protobuf/src --cpp_out=. $<
 
-clean:
-	rm -f *.txt *.o *.pb.cc *.pb.h tsc tsd coordinator followsync
+clean: dclean
+	rm -rf *.txt *.o *.pb.cc *.pb.h tsc tsd coordinator synchronizer
+
+dclean: 
+	rm -rf ./logs/* ./*_1/ ./*_2/ ./*_3/
 
 
 # The following is to test your system and ensure a smoother experience.

@@ -32,16 +32,30 @@ syntax = "proto3";
 package csce438;
 
 import "google/protobuf/timestamp.proto";
+import "snsCoordinator.proto";
+import "google/protobuf/empty.proto";
 
 // The messenger service definition.
 service SNSService{
-
   rpc Login (Request) returns (Reply) {}
   rpc List (Request) returns (ListReply) {}
   rpc Follow (Request) returns (Reply) {}
-  rpc UnFollow (Request) returns (Reply) {}
-  // Bidirectional streaming RPC
-  rpc Timeline (stream Message) returns (stream Message) {} 
+  rpc Check(Request) returns (Reply) {}
+  rpc Timeline (stream Message) returns (stream Message) {}
+  rpc MakeMaster (snsCoordinator.Heartbeat) returns (google.protobuf.Empty) {}
+  rpc SendSlave (snsCoordinator.Heartbeat) returns (Reply) {}
+}
+
+message Request {
+  string user_id = 1;
+  repeated string arguments = 2;
+}
+
+// The response definition
+message Reply {
+  string msg = 1;
+  repeated string all_users = 2;
+  repeated string following_users = 3;
 }
 
 message ListReply {
@@ -49,20 +63,33 @@ message ListReply {
   repeated string followers = 2;
 }
 
-message Request {
-  string username = 1;
-  repeated string arguments = 2;
-}
-
-message Reply {
-  string msg = 1;
-}
-
 message Message {
-  //Username who sent the message
-  string username = 1;
+  //user_id who sent the message
+  string user_id = 1;
   //Message from the user
   string msg = 2;
   //Time the message was sent
   google.protobuf.Timestamp timestamp = 3;
 }
+
+message Timeline {
+  repeated Message messages = 1;
+}
+
+// server active status
+enum UserStatus {
+	INACTIVE = 0;
+	ACTIVE = 1;
+}
+
+message User {
+  string user_id = 1;
+  repeated string following = 2;
+  repeated string followers = 3;
+  UserStatus status = 4;
+}
+
+message allUsers {
+  repeated User users = 1;
+}
+

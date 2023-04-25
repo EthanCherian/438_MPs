@@ -1,371 +1,413 @@
+#include "client.h"
+#include <getopt.h>
+#include <glog/logging.h>
+#include <grpc++/grpc++.h>
 #include <iostream>
 #include <memory>
-#include <thread>
-#include <vector>
+#include <signal.h>
 #include <string>
+#include <thread>
 #include <unistd.h>
-#include <grpc++/grpc++.h>
-#include "client.h"
-#include<glog/logging.h>
-#define log(severity, msg) LOG(severity) << msg; google::FlushLogFiles(google::severity); 
+#include <vector>
+
+#define log(severity, msg) \
+	LOG(severity) << msg;  \
+	google::FlushLogFiles(google::severity);
 
 #include "sns.grpc.pb.h"
 #include "snsCoordinator.grpc.pb.h"
+
+using csce438::ListReply;
+using csce438::Message;
+using csce438::Reply;
+using csce438::Request;
+using csce438::SNSService;
+using google::protobuf::Timestamp;
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::ClientReader;
 using grpc::ClientReaderWriter;
 using grpc::ClientWriter;
 using grpc::Status;
-using csce438::Message;
-using csce438::ListReply;
-using csce438::Request;
-using csce438::Reply;
-using csce438::SNSService;
+using grpc::StatusCode;
+using snsCoordinator::Server;
 using snsCoordinator::SNSCoordinator;
 using snsCoordinator::User;
-using snsCoordinator::Server;
 
-Message MakeMessage(const std::string& username, const std::string& msg) {
-    Message m;
-    m.set_username(username);
-    m.set_msg(msg);
-    google::protobuf::Timestamp* timestamp = new google::protobuf::Timestamp();
-    timestamp->set_seconds(time(NULL));
-    timestamp->set_nanos(0);
-    m.set_allocated_timestamp(timestamp);
-    return m;
+using std::begin;
+using std::cout;
+using std::distance;
+using std::end;
+using std::endl;
+using std::find;
+using std::find_if;
+using std::fstream;
+using std::ios;
+using std::mutex;
+using std::pair;
+using std::set;
+using std::shared_ptr;
+using std::stoi;
+using std::string;
+using std::thread;
+using std::unique_lock;
+using std::unique_ptr;
+using std::unordered_map;
+using std::vector;
+
+Message MakeMessage(const std::string& user_id, const std::string& msg) {
+	Message m;
+	m.set_user_id(user_id);
+	m.set_msg(msg);
+	google::protobuf::Timestamp* timestamp = new google::protobuf::Timestamp();
+	timestamp->set_seconds(time(NULL));
+	timestamp->set_nanos(0);
+	m.set_allocated_timestamp(timestamp);
+	return m;
 }
 
-class Client : public IClient
-{
-    public:
-        Client(const std::string& cip, const std::string& cp, const std::string& u, const std::string& p)
-            : coord_ip(cip), coord_port(cp), username(u), client_port(p) {};
-    protected:
-        virtual int connectTo();
-        virtual IReply processCommand(std::string& input);
-        virtual void processTimeline();
-    private:
-        std::string coord_ip;
-        std::string coord_port;
-        std::string username;
-        std::string client_port;
-        // You can have an instance of the client stub
-        // as a member variable.
-        std::unique_ptr<SNSService::Stub> server_stub_;
-        std::unique_ptr<SNSCoordinator::Stub> coordinator_stub_;
+class Client : public IClient {
+public:
+	Client(const string& cip,
+		   const string& cp,
+		   const string& user_id,
+		   const string& port)
+		: cip(cip), cp(cp), user_id(user_id), port(port) {
+	}
 
-        IReply Login();
-        IReply List();
-        IReply Follow(const std::string& username2);
-        IReply UnFollow(const std::string& username2);
-        void Timeline(const std::string& username);
+protected:
+	virtual IReply connectTo();
+	virtual IReply processCommand(string& input);
+	virtual void processTimeline();
 
+private:
+	string cip;
+	string cp;
+	string user_id;
+	string port;
 
+	// You can have an instance of the client stub
+	// as a member variable.
+	unique_ptr<SNSService::Stub> server_stub;
+	unique_ptr<SNSCoordinator::Stub> coordinator_stub;
+
+	IReply Login();
+	IReply List();
+	IReply Follow(const string& user_id2);
+	void Timeline(const string& user_id);
 };
 
+static struct option long_options[] = {
+	{"cip", required_argument, 0, 'c'},
+	{"cp", required_argument, 0, 'i'},
+	{"p", required_argument, 0, 'p'},
+	{"id", required_argument, 0, 'd'},
+	{0, 0, 0, 0}};
+
 int main(int argc, char** argv) {
+	string user_id = "1";
+	string port = "10000";	  // clients's port
+	string cip = "localhost"; // coordinator host
+	string cp = "9090";		  // coordinator port
 
-    std::string coord_ip = "8.8.8.8";
-    std::string coord_port = "8080";
-    std::string username = "default";
-    std::string client_port = "3010";
-    
-    int opt = 0;
-    while ((opt = getopt(argc, argv, "cip:id:p:cp:")) != -1){
-        switch(opt) {
-            case 'cip':
-                coord_ip = optarg;break;
-            case 'id':
-                username = optarg;break;
-            case 'cp':
-                coord_port = optarg;break;
-            case 'p':
-                client_port = optarg;break;
-            default:
-                std::cerr << "Invalid Command Line Argument\n";
-        }
-    }
-    std::string log_file_name = std::string("client-") + username;
-    google::InitGoogleLogging(log_file_name.c_str());
-    log(INFO, "Logging Initialized. Client starting...");
-    Client myc(coord_ip, coord_port, username, client_port);
-    // You MUST invoke "run_client" function to start business logic
-    myc.run_client();
+	int option_index = 0;
+	int opt = 0;
+	while ((opt = getopt_long(argc, argv, "c:i:p:d:", long_options, &option_index)) != -1) {
+		switch (opt) {
+			case 'c':
+				cip = optarg;
+				break;
+			case 'i':
+				cp = optarg;
+				break;
+			case 'p':
+				port = optarg;
+				break;
+			case 'd':
+				user_id = optarg;
+				break;
+			default:
+				std::cerr << "Invalid Command Line Argument\n";
+				break;
+		}
+	}
 
-    return 0;
+	string log_file_name = string("client-") + user_id;
+	google::InitGoogleLogging(log_file_name.c_str());
+	log(INFO, "Logging Initialized. Client starting...");
+
+	Client myc(cip, cp, user_id, port);
+
+	myc.run_client();
+
+	return 0;
 }
 
-int Client::connectTo()
-{
-	// ------------------------------------------------------------
-    // In this function, you are supposed to create a stub so that
-    // you call service methods in the processCommand/porcessTimeline
-    // functions. That is, the stub should be accessible when you want
-    // to call any service methods in those functions.
-    // I recommend you to have the stub as
-    // a member variable in your own Client class.
-    // Please refer to gRpc tutorial how to create a stub.
-	// ------------------------------------------------------------
-    std::string coord_info = coord_ip + ":" + coord_port;
-    coordinator_stub_ = std::unique_ptr<SNSCoordinator::Stub>(
-        SNSCoordinator::NewStub(
+IReply Client::Login() {
+	// Get server info from coordinator
+	ClientContext context;
+	User user;
+	user.set_user_id(stoi(user_id));
+	Server server;
+	Status status = coordinator_stub->GetServer(&context, user, &server);
+	if (!status.ok()) {
+		// cordinator failed
+		log(ERROR, "Connection to server failed: " << cip << ":" << cp);
+		exit(1);
+	}
+
+	// Connect to server
+	string login_info = server.server_ip() + ":" + server.port_num();
+
+	server_stub = unique_ptr<SNSService::Stub>(SNSService::NewStub(
 		grpc::CreateChannel(
-			coord_info, grpc::InsecureChannelCredentials()))
-    );
-    ClientContext con;
-    User user;
-    user.set_user_id(std::stoi(username));
-    Server server;
-    Status status = coordinator_stub_->GetServer(&con, user, &server);
-    if (!status.ok()) {
-        return -1;
-    }
+			login_info, grpc::InsecureChannelCredentials())));
 
-    std::string login_info = server.server_ip() + ":" + server.port_num();
-    server_stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
-               grpc::CreateChannel(
-                    login_info, grpc::InsecureChannelCredentials())));
+	// try login
+	ClientContext s_context;
+	Request request;
+	request.set_user_id(user_id);
+	Reply reply;
+	status = server_stub->Login(&s_context, request, &reply);
 
-    IReply ire = Login();
-    if(!ire.grpc_status.ok()) {
-        return -1;
-    }
-    return 1;
+	IReply ire;
+	ire.server_info = login_info;
+	ire.grpc_status = status;
+	if (!ire.grpc_status.ok()) {
+		log(INFO, "Trying to connect to server...");
+
+		std::this_thread::sleep_for(std::chrono::seconds(4));
+
+		ire = Login();
+	}
+
+	return ire;
 }
 
-IReply Client::processCommand(std::string& input)
-{
+IReply Client::connectTo() {
+	// ------------------------------------------------------------
+	// In this function, you are supposed to create a stub so that
+	// you call service methods in the processCommand/porcessTimeline
+	// functions. That is, the stub should be accessible when you want
+	// to call any service methods in those functions.
+	// I recommend you to have the stub as
+	// a member variable in your own Client class.
+	// Please refer to gRpc tutorial how to create a stub.
+	// ------------------------------------------------------------
+
+	// Connect to coordinator
+	string coordinator_info = cip + ":" + cp;
+	coordinator_stub = unique_ptr<SNSCoordinator::Stub>(SNSCoordinator::NewStub(
+		grpc::CreateChannel(
+			coordinator_info, grpc::InsecureChannelCredentials())));
+
+	return Login();
+}
+
+IReply Client::processCommand(std::string& input) {
 	// ------------------------------------------------------------
 	// GUIDE 1:
 	// In this function, you are supposed to parse the given input
-    // command and create your own message so that you call an 
-    // appropriate service method. The input command will be one
-    // of the followings:
+	// command and create your own message so that you call an
+	// appropriate service method. The input command will be one
+	// of the followings:
 	//
 	// FOLLOW <username>
 	// UNFOLLOW <username>
 	// LIST
-    // TIMELINE
+	// TIMELINE
 	//
 	// - JOIN/LEAVE and "<username>" are separated by one space.
 	// ------------------------------------------------------------
-	
-    // ------------------------------------------------------------
+
+	// ------------------------------------------------------------
 	// GUIDE 2:
 	// Then, you should create a variable of IReply structure
 	// provided by the client.h and initialize it according to
 	// the result. Finally you can finish this function by returning
-    // the IReply.
-	// ------------------------------------------------------------
-    
-    
-	// ------------------------------------------------------------
-    // HINT: How to set the IReply?
-    // Suppose you have "Join" service method for JOIN command,
-    // IReply can be set as follow:
-    // 
-    //     // some codes for creating/initializing parameters for
-    //     // service method
-    //     IReply ire;
-    //     grpc::Status status = server_stub_->Join(&context, /* some parameters */);
-    //     ire.grpc_status = status;
-    //     if (status.ok()) {
-    //         ire.comm_status = SUCCESS;
-    //     } else {
-    //         ire.comm_status = FAILURE_NOT_EXISTS;
-    //     }
-    //      
-    //      return ire;
-    // 
-    // IMPORTANT: 
-    // For the command "LIST", you should set both "all_users" and 
-    // "following_users" member variable of IReply.
-	// ------------------------------------------------------------
-    IReply ire;
-    std::size_t index = input.find_first_of(" ");
-    log(INFO, "Processing "+input);
-    if (index != std::string::npos) {
-        std::string cmd = input.substr(0, index);
-
-
-        /*
-        if (input.length() == index + 1) {
-            std::cout << "Invalid Input -- No Arguments Given\n";
-        }
-        */
-
-        std::string argument = input.substr(index+1, (input.length()-index));
-
-        if (cmd == "FOLLOW") {
-            return Follow(argument);
-        } else if(cmd == "UNFOLLOW") {
-            return UnFollow(argument);
-        }
-    } else {
-        if (input == "LIST") {
-            return List();
-        } else if (input == "TIMELINE") {
-            ire.comm_status = SUCCESS;
-            return ire;
-        }
-    }
-
-    ire.comm_status = FAILURE_INVALID;
-    return ire;
-}
-
-void Client::processTimeline()
-{
-    Timeline(username);
-	// ------------------------------------------------------------
-    // In this function, you are supposed to get into timeline mode.
-    // You may need to call a service method to communicate with
-    // the server. Use getPostMessage/displayPostMessage functions
-    // for both getting and displaying messages in timeline mode.
-    // You should use them as you did in hw1.
+	// the IReply.
 	// ------------------------------------------------------------
 
-    // ------------------------------------------------------------
-    // IMPORTANT NOTICE:
-    //
-    // Once a user enter to timeline mode , there is no way
-    // to command mode. You don't have to worry about this situation,
-    // and you can terminate the client program by pressing
-    // CTRL-C (SIGINT)
 	// ------------------------------------------------------------
+	// HINT: How to set the IReply?
+	// Suppose you have "Join" service method for JOIN command,
+	// IReply can be set as follow:
+	//
+	//     // some codes for creating/initializing parameters for
+	//     // service method
+	//     IReply ire;
+	//     grpc::Status status = stub_->Join(&context, /* some parameters */);
+	//     ire.grpc_status = status;
+	//     if (status.ok()) {
+	//         ire.comm_status = SUCCESS;
+	//     } else {
+	//         ire.comm_status = FAILURE_NOT_EXISTS;
+	//     }
+	//
+	//      return ire;
+	//
+	// IMPORTANT:
+	// For the command "LIST", you should set both "all_users" and
+	// "following_users" member variable of IReply.
+	// ------------------------------------------------------------
+	IReply ire;
+	std::size_t index = input.find_first_of(" ");
+
+	log(INFO, "Processing " + input);
+
+	if (index != std::string::npos) {
+		std::string cmd = input.substr(0, index);
+
+		std::string argument = input.substr(index + 1, (input.length() - index));
+
+		if (cmd == "FOLLOW") {
+			return Follow(argument);
+		}
+	} else {
+	if (input == "LIST") {
+			return List();
+		} else if (input == "TIMELINE") {
+			ire.comm_status = SUCCESS;
+			return ire;
+		}
+	}
+
+	ire.comm_status = FAILURE_INVALID;
+	return ire;
 }
 
 IReply Client::List() {
-    //Data being sent to the server
-    Request request;
-    request.set_username(username);
+	// Data being sent to the server
+	Request request;
+	request.set_user_id(user_id);
 
-    //Container for the data from the server
-    ListReply list_reply;
+	// Container for the data from the server
+	ListReply list_reply;
 
-    //Context for the client
-    ClientContext context;
+	// Context for the client
+	ClientContext context;
 
-    Status status = server_stub_->List(&context, request, &list_reply);
-    IReply ire;
-    ire.grpc_status = status;
-    //Loop through list_reply.all_users and list_reply.following_users
-    //Print out the name of each room
-    if(status.ok()){
-        ire.comm_status = SUCCESS;
-        std::string all_users;
-        std::string following_users;
-        for(std::string s : list_reply.all_users()){
-            ire.all_users.push_back(s);
-        }
-        for(std::string s : list_reply.followers()){
-            ire.followers.push_back(s);
-        }
-    }
-    return ire;
-}
-        
-IReply Client::Follow(const std::string& username2) {
-    Request request;
-    request.set_username(username);
-    request.add_arguments(username2);
+	Status status = server_stub->List(&context, request, &list_reply);
 
-    Reply reply;
-    ClientContext context;
+	log(INFO, "Called server for LIST");
 
-    Status status = server_stub_->Follow(&context, request, &reply);
-    IReply ire; ire.grpc_status = status;
-    if (reply.msg() == "unkown user name") {
-        ire.comm_status = FAILURE_INVALID_USERNAME;
-    } else if (reply.msg() == "unknown follower username") {
-        ire.comm_status = FAILURE_INVALID_USERNAME;
-    } else if (reply.msg() == "you have already joined") {
-        ire.comm_status = FAILURE_ALREADY_EXISTS;
-    } else if (reply.msg() == "Follow Successful") {
-        ire.comm_status = SUCCESS;
-    } else {
-        ire.comm_status = FAILURE_UNKNOWN;
-    }
-    return ire;
+	IReply ire;
+	ire.grpc_status = status;
+	// Loop through list_reply.all_users and list_reply.following_users
+	// Print out the name of each room
+	if (status.ok()) {
+		ire.comm_status = SUCCESS;
+		std::string all_users;
+		std::string following_users;
+		for (std::string s : list_reply.all_users()) {
+			ire.all_users.push_back(s);
+		}
+		for (std::string s : list_reply.followers()) {
+			ire.followers.push_back(s);
+		}
+
+		log(INFO, "LIST successful");
+	} else {
+		displayReConnectionMessage(Login().server_info);
+		ire = List();
+	}
+
+	return ire;
 }
 
-IReply Client::UnFollow(const std::string& username2) {
-    Request request;
+IReply Client::Follow(const std::string& user_id2) {
+	Request request;
+	request.set_user_id(user_id);
+	request.add_arguments(user_id2);
 
-    request.set_username(username);
-    request.add_arguments(username2);
+	log(INFO, "Attempting to follow user " << user_id2 << " by user " << user_id);
 
-    Reply reply;
+	Reply reply;
+	ClientContext context;
 
-    ClientContext context;
+	Status status = server_stub->Follow(&context, request, &reply);
+	IReply ire;
+	ire.grpc_status = status;
+	if (reply.msg() == "Join Failed -- Invalid Username") {
+		ire.comm_status = FAILURE_INVALID_USERID;
+	} else if (reply.msg() == "Join Failed -- Already Following User") {
+		ire.comm_status = FAILURE_ALREADY_EXISTS;
+	} else if (reply.msg() == "Join Successful") {
+		ire.comm_status = SUCCESS;
 
-    Status status = server_stub_->UnFollow(&context, request, &reply);
-    IReply ire;
-    ire.grpc_status = status;
-    if (reply.msg() == "unknown follower username") {
-        ire.comm_status = FAILURE_INVALID_USERNAME;
-    } else if (reply.msg() == "you are not follower") {
-        ire.comm_status = FAILURE_INVALID_USERNAME;
-    } else if (reply.msg() == "UnFollow Successful") {
-        ire.comm_status = SUCCESS;
-    } else {
-        ire.comm_status = FAILURE_UNKNOWN;
-    }
-
-    return ire;
+		log(INFO, "User " << user_id << " successfully followed " << user_id2);
+	} else {
+		displayReConnectionMessage(Login().server_info);
+		Follow(user_id2);
+	}
+	return ire;
 }
 
-IReply Client::Login() {
-    Request request;
-    request.set_username(username);
-    Reply reply;
-    ClientContext context;
+void Client::processTimeline() {
+	Timeline(user_id);
+	// ------------------------------------------------------------
+	// In this function, you are supposed to get into timeline mode.
+	// You may need to call a service method to communicate with
+	// the server. Use getPostMessage/displayPostMessage functions
+	// for both getting and displaying messages in timeline mode.
+	// You should use them as you did in hw1.
+	// ------------------------------------------------------------
 
-    Status status = server_stub_->Login(&context, request, &reply);
-
-    IReply ire;
-    ire.grpc_status = status;
-    if (reply.msg() == "you have already joined") {
-        ire.comm_status = FAILURE_ALREADY_EXISTS;
-    } else {
-        ire.comm_status = SUCCESS;
-    }
-    return ire;
+	// ------------------------------------------------------------
+	// IMPORTANT NOTICE:
+	//
+	// Once a user enter to timeline mode , there is no way
+	// to command mode. You don't have to worry about this situation,
+	// and you can terminate the client program by pressing
+	// CTRL-C (SIGINT)
+	// ------------------------------------------------------------
 }
 
 void Client::Timeline(const std::string& username) {
-    ClientContext context;
+	ClientContext context;
 
-    std::shared_ptr<ClientReaderWriter<Message, Message>> stream(
-            server_stub_->Timeline(&context));
+	std::shared_ptr<ClientReaderWriter<Message, Message>> stream(
+		server_stub->Timeline(&context));
 
-    //Thread used to read chat messages and send them to the server
-    std::thread writer([username, stream]() {
-            std::string input = "Set Stream";
-            Message m = MakeMessage(username, input);
-            stream->Write(m);
-            while (1) {
-            input = getPostMessage();
-            m = MakeMessage(username, input);
-            stream->Write(m);
-            }
-            stream->WritesDone();
-            });
+	// Thread used to read chat messages and send them to server
+	std::thread writer([username, stream, this]() {
+		std::string input = "Set Stream";
+		Message m = MakeMessage(username, input);
+		bool write_success = stream->Write(m);
+		if (!write_success) {
+			log(ERROR, "Failed to write message to server, attempting to reconnect");
 
-    std::thread reader([username, stream]() {
-            Message m;
-            while(stream->Read(&m)){
+			displayReConnectionMessage(Login().server_info);
+			Timeline(username);
+		}
+		while (1) {
+			input = getPostMessage();
+			m = MakeMessage(username, input);
+			write_success = stream->Write(m);
+			if (!write_success) {
+				displayReConnectionMessage(Login().server_info);
+				Timeline(username);
+			}
+		}
+		stream->WritesDone();
+	});
 
-            google::protobuf::Timestamp temptime = m.timestamp();
-            std::time_t time = temptime.seconds();
-            displayPostMessage(m.username(), m.msg(), time);
-            }
-            });
+	std::thread reader([username, stream, this]() {
+		Message m;
+		while (true) {
+			bool read_success = stream->Read(&m);
+			if (!read_success) {
+				displayReConnectionMessage(Login().server_info);
+				Timeline(username);
+			}
 
-    //Wait for the threads to finish
-    writer.join();
-    reader.join();
+			google::protobuf::Timestamp temptime = m.timestamp();
+			std::time_t time = temptime.seconds();
+			displayPostMessage(m.user_id(), m.msg(), time);
+		}
+	});
+
+	// Wait for the threads to finish
+	writer.join();
+	reader.join();
 }
-
