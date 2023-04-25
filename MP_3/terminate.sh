@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Kill all processes created by the script
+pkill -f "mkdir logs"
 pkill -f "GLOG_log_dir=./logs ./coordinator -p 9000"
 pkill -f "GLOG_log_dir=./logs ./synchronizer --cip localhost --cp 9000 -p 9070 --id 1"
 pkill -f "GLOG_log_dir=./logs ./synchronizer --cip localhost --cp 9000 -p 9080 --id 2"

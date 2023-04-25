@@ -303,12 +303,12 @@ class SNSServiceImpl final : public SNSService::Service {
 			slave_stream = slave_stub->Timeline(&s_context);
 
 			// also this log checking first.user_id() somehow fixed filename in slave dir
-			log(INFO, "Pushing first message from " << first.user_id() << " to slave");
+			log(INFO, "Pushing first message from " << timelineReq.user_id() << " to slave");
 
-			slave_stream->Write(first);
+			slave_stream->Write(timelineReq);
 		}
 
-		thread reader([clientname, filename, &flag, stream, &slave_stream]() mutable {
+		thread reader([clientname, filename, &cont, stream, &slave_stream]() mutable {
 			Message message;
 			while (stream->Read(&message)) {
 				string username = message.user_id();
