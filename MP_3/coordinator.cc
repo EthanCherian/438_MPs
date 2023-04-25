@@ -108,13 +108,13 @@ void CheckHeartbeats() {
 				clusters[i]->slave = new Server();
 
 				// send heartbeat to new master to take over master directory, tell it to become master
-				auto server_stub = connectToServer(clusters[i]->master);
+				auto master_stub = connectToServer(clusters[i]->master);
 				ClientContext context;
 				Heartbeat hb;
 				hb.set_server_type(ServerType::MASTER);
 
 				google::protobuf::Empty empty;
-				server_stub->MakeMaster(&context, hb, &empty);
+				master_stub->MakeMaster(&context, hb, &empty);
 			}
 
 			// check slave status
@@ -161,8 +161,8 @@ class SNSCoordinatorImpl final : public SNSCoordinator::Service {
 						// send new slave info to existing master
 						auto master_stub = connectToServer(clusters[cluster_id]->master);
 						ClientContext m_context;
-						Reply m_reply;
-						master_stub->SendSlave(&m_context, hb, &m_reply);
+						Reply rep;
+						master_stub->SendSlave(&m_context, hb, &rep);
 					}
 					stream->Write(hb);
 					first = false;
@@ -296,8 +296,8 @@ void RunCoordinator(string port_no) {
 	}
 
 	// start a thread to check for heartbeats
-	thread heart_monitor(CheckHeartbeats);
-	heart_monitor.detach();
+	thread heartbeatMonitor(CheckHeartbeats);
+	heartbeatMonitor.detach();
 
 	coordinator->Wait();
 }

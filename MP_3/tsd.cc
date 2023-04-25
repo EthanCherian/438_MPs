@@ -82,7 +82,7 @@ string server_ip = "localhost";
 string port = "10000"; // server's port
 unique_ptr<SNSCoordinator::Stub> coordinator_stub;
 mutex mu_;
-ServerType opt_type;
+ServerType server_type;
 
 // for master to use
 unique_ptr<SNSService::Stub> slave_stub;
@@ -133,8 +133,8 @@ void doFollow(string username1, string username2, const Request* request, Reply*
 
 	file_lock(username1 + "_following");
 	std::ofstream followingFile(truePath(username1 + "_following.txt"), std::ios::app | std::ios::out | std::ios::in);
-	string content = username2 + " " + currTime + " \n";
-	followingFile << content;
+	string msg = username2 + " " + currTime + " \n";
+	followingFile << msg;
 	file_unlock(username1 + "_following");
 
 	reply->set_msg("Join Successful");
@@ -166,7 +166,7 @@ class SNSServiceImpl final : public SNSService::Service {
 
 		// this server should become master
 		type = ServerType::MASTER;
-		opt_type = ServerType::MASTER;
+		server_type = ServerType::MASTER;
 
 		// assign master directory
 		directory = snsCoordinator::ServerType_Name(type) + "_" + server_id + "/";
@@ -222,7 +222,7 @@ class SNSServiceImpl final : public SNSService::Service {
 
 		string username1 = request->user_id();
 		string username2 = request->arguments(0);
-		if (all_uids.count(stoi(username2)) == 0)
+		if (all_uids.count(stoi(username2)) == 0)	// user doesn't exist
 			reply->set_msg("Join Failed -- Invalid Username");
 		else {
 			doFollow(username1, username2, request, reply);
@@ -289,14 +289,14 @@ class SNSServiceImpl final : public SNSService::Service {
 	Status Timeline(ServerContext* context,
 					ServerReaderWriter<Message, Message>* stream) override {
 
-		Message first;
-		stream->Read(&first);
-		string clientname = first.user_id();
+		Message timelineReq;
+		stream->Read(&timelineReq);
+		string clientname = timelineReq.user_id();
 
 		log(INFO, "Serving Timeline Request for user " << clientname);
 
 		string filename = clientname + "_timeline";
-		bool flag = 1; // determines whether writer should continue or not
+		bool cont = 1; // determines whether writer should continue or not
 
 		ClientContext s_context;
 		if (type == ServerType::MASTER && slave_stub != nullptr) {
@@ -328,18 +328,18 @@ class SNSServiceImpl final : public SNSService::Service {
 					slave_stream->Write(message);
 				}
 			}
-			flag = 0;
+			cont = 0;
 			
 			if (type == ServerType::MASTER && slave_stream != nullptr) {
 				slave_stream->WritesDone();
 			}
 		});
 
-		thread writer([clientname, filename, flag, stream]() {
+		thread writer([clientname, filename, cont, stream]() {
 			RewriteTimeline(filename, stream); // Initial write
 			fileChanged(truePath(filename + ".txt")); // Initial check
 			
-			while (flag) {
+			while (cont) {
 				// File changed within recently?
 				if (fileChanged(truePath(filename + ".txt"))) {
 					RewriteTimeline(filename, stream);
@@ -358,6 +358,7 @@ class SNSServiceImpl final : public SNSService::Service {
 	}
 };
 
+// monitors file systems for relevant changes and updates in-memory storage accordingly
 void fs_monitor() {
 
 	// runs every 2 seconds
@@ -421,13 +422,13 @@ void sendHeartBeats(string cip, string cp) {
 	// send/read heartbeats
 	while (true) {
 		hb.set_server_id(stoi(server_id));
-		hb.set_server_type(opt_type);
+		hb.set_server_type(server_type);
 		hb.set_server_ip(server_ip);
 		hb.set_server_port(port);
 		hb.set_allocated_timestamp(protoGetNow());
 
 		log(INFO, "Sending heartbeat at " << hb.timestamp().seconds() << "s"
-										  << " for type " << snsCoordinator::ServerType_Name(opt_type));
+										  << " for type " << snsCoordinator::ServerType_Name(server_type));
 
 		// send heartbeat
 		stream->Write(hb);
@@ -436,12 +437,12 @@ void sendHeartBeats(string cip, string cp) {
 		if (first) {
 			Heartbeat reply_hb;
 			if (stream->Read(&reply_hb)) {
-				log(INFO, "Reading reply for " << opt_type << " return type " << snsCoordinator::ServerType_Name(reply_hb.server_type()));
-				if (opt_type == ServerType::MASTER) {
+				log(INFO, "Reading reply for " << server_type << " return type " << snsCoordinator::ServerType_Name(reply_hb.server_type()));
+				if (server_type == ServerType::MASTER) {
 					if (reply_hb.server_type() == ServerType::SLAVE) {
 						// A master already exists, become a slave
 						type = ServerType::SLAVE;
-						opt_type = type;
+						server_type = type;
 						hb.set_server_type(ServerType::SLAVE);
 
 						// assign slave directory
@@ -453,7 +454,7 @@ void sendHeartBeats(string cip, string cp) {
 						std::filesystem::copy(m_dir, directory, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
 					}
 				}
-				type = opt_type;
+				type = server_type;
 			}
 			first = false;
 		}
@@ -472,10 +473,10 @@ void RunServer(string cip, string cp) {
 	log(INFO, "Connecting to coordinator... " + cip + ":" + cp);
 
 	// Connect to coordinator
-	string coordinator_info = cip + ":" + cp;
+	string coord_info = cip + ":" + cp;
 	coordinator_stub = unique_ptr<SNSCoordinator::Stub>(SNSCoordinator::NewStub(
 		grpc::CreateChannel(
-			coordinator_info, grpc::InsecureChannelCredentials())));
+			coord_info, grpc::InsecureChannelCredentials())));
 
 	log(INFO, "Connected to coordinator " + cip + ":" + cp);
 
@@ -584,9 +585,9 @@ int main(int argc, char** argv) {
 				break;
 			case 't':
 				if (string(optarg) == "master") {
-					opt_type = ServerType::MASTER;
+					server_type = ServerType::MASTER;
 				} else if (string(optarg) == "slave") {
-					opt_type = ServerType::SLAVE;
+					server_type = ServerType::SLAVE;
 				} else {
 					std::cerr << "Invalid Server Type\n";
 					return 1;
@@ -598,9 +599,9 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	string log_file_name = snsCoordinator::ServerType_Name(opt_type) + server_id;
+	string log_file_name = snsCoordinator::ServerType_Name(server_type) + server_id;
 	google::InitGoogleLogging(log_file_name.c_str());
-	log(INFO, "Logging Initialized. Server starting... with coord: " + cip + ":" + cp + " p: " + port + " id: " + server_id + " t: " + snsCoordinator::ServerType_Name(opt_type));
+	log(INFO, "Logging Initialized. Server starting... with coord: " + cip + ":" + cp + " p: " + port + " id: " + server_id + " t: " + snsCoordinator::ServerType_Name(server_type));
 
 	RunServer(cip, cp);
 

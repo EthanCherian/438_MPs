@@ -132,11 +132,11 @@ bool isFollowingFollowerTimelineFile(const string& filename) {
 
 // thread function to continually check list of all users
 void checkAllUsers() {
-	string users_file = "all_users";
-	string users_path = truePath("all_users.txt", ServerType::MASTER);
+	string all_users_file = "all_users";
+	string all_users_path = truePath("all_users.txt", ServerType::MASTER);
 
 	// make sure all_users.txt exists
-	while (!std::filesystem::exists(users_path)) {
+	while (!std::filesystem::exists(all_users_path)) {
 		log(INFO, "all_users.txt not found yet...");
 
 		std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -145,19 +145,19 @@ void checkAllUsers() {
 	while (true) {
 		std::this_thread::sleep_for(std::chrono::seconds(10)); // wait before checking again
 
-		if (fileChanged(users_path)) {
-			file_lock(users_file, ServerType::MASTER);
-			Users users;
+		if (fileChanged(all_users_path)) {
+			file_lock(all_users_file, ServerType::MASTER);
+			Users newusers;
 			string line;
-			ifstream file(users_path);
+			ifstream file(all_users_path);
 			while (getline(file, line)) {
 				if (all_uids.count(stoi(line)) == 0) {
-					users.add_user_id(stoi(line));
+					newusers.add_user_id(stoi(line));
 					log(INFO, "Cluster " << server_id << " added user " << line);
 					all_uids.insert(stoi(line));
 				}
 			}
-			file_unlock(users_file, ServerType::MASTER);
+			file_unlock(all_users_file, ServerType::MASTER);
 
 			for (unsigned int i = 0; i < 3; i++) {
 				if (i + 1 != stoi(server_id)) {
@@ -166,7 +166,7 @@ void checkAllUsers() {
 					ClientContext context;
 					Reply reply;
 					fsyncs.at(i)
-						->SyncUsers(&context, users, &reply);
+						->SyncUsers(&context, newusers, &reply);
 				}
 			}
 		}
@@ -214,10 +214,10 @@ void checkRelations() {
 							log(INFO, uidInt << " is now following " << tmp << " at time " << tme);
 
 							ClientContext client_context;
-							Reply tmpRep;
+							Reply rep;
 							relation.set_follower(tmp);
 							relation.set_follow_time(tme);
-							fsyncs.at((tmp - 1) % 3)->SyncRelations(&client_context, relation, &tmpRep);
+							fsyncs.at((tmp - 1) % 3)->SyncRelations(&client_context, relation, &rep);
 							// TODO: Ensure SyncRelations worked by checking status
 						}
 						following[uidInt][tmp] = tme;
@@ -267,7 +267,7 @@ void checkRelations() {
 		// Now use the map to write
 		for (auto& [fid, newTimeline] : TUPE) {
 			ClientContext client_context;
-			Reply tempRep;
+			Reply rep;
 			Posts posts;
 			posts.set_follower_user(fid);
 			for (const auto& message : newTimeline) {
@@ -282,7 +282,7 @@ void checkRelations() {
 				if (followers[uid].count(fid) == 1 && uid != fid)
 					posts.add_msgs(message);
 			}
-			fsyncs.at((fid - 1) % 3)->SyncTimeline(&client_context, posts, &tempRep);
+			fsyncs.at((fid - 1) % 3)->SyncTimeline(&client_context, posts, &rep);
 		}
 	}
 }
@@ -371,11 +371,11 @@ class SNSFollowSyncImpl final : public SNSFollowSync::Service {
 		}
 
 		// update userToUpdate's timeline file in both master and slave directories
-		std::ofstream timelineM(masterPath);
-		std::ofstream timelineS(slavePath);
+		std::ofstream masterTimeline(masterPath);
+		std::ofstream slaveTimeline(slavePath);
 		for (auto& line : setMi) {
-			timelineM << line << endl;
-			timelineS << line << endl;
+			masterTimeline << line << endl;
+			slaveTimeline << line << endl;
 		}
 
 		file_times[masterPath] = getLastWriteTime(masterPath);
@@ -414,7 +414,7 @@ void sendHeartBeat(string cip, string cp) {
 	log(INFO, "Receiving info back from coordinator...");
 
 	// wait to recieve other fsync servers data and make stubs
-	Heartbeat other_hb;
+	Heartbeat reply_hb;
 	vector<int> mapping = {2, 0, 1};
 	int id_counter = stoi(server_id);
 
@@ -422,24 +422,24 @@ void sendHeartBeat(string cip, string cp) {
 	fsyncs[id_counter - 1] = unique_ptr<SNSFollowSync::Stub>(SNSFollowSync::NewStub(grpc::CreateChannel(server_ip + ":" + port, grpc::InsecureChannelCredentials())));
 
 	// first sync server
-	stream->Read(&other_hb);
-	log(INFO, "Read back server_id: " << other_hb.server_id());
+	stream->Read(&reply_hb);
+	log(INFO, "Read back server_id: " << reply_hb.server_id());
 
-	fsyncs[other_hb.server_id() - 1] = unique_ptr<SNSFollowSync::Stub>(SNSFollowSync::NewStub(grpc::CreateChannel(other_hb.server_ip() + ":" + other_hb.server_port(), grpc::InsecureChannelCredentials())));
+	fsyncs[reply_hb.server_id() - 1] = unique_ptr<SNSFollowSync::Stub>(SNSFollowSync::NewStub(grpc::CreateChannel(reply_hb.server_ip() + ":" + reply_hb.server_port(), grpc::InsecureChannelCredentials())));
 
 	// second sync server
-	stream->Read(&other_hb);
-	log(INFO, "Read back server_id: " << other_hb.server_id());
+	stream->Read(&reply_hb);
+	log(INFO, "Read back server_id: " << reply_hb.server_id());
 
-	fsyncs[other_hb.server_id() - 1] = unique_ptr<SNSFollowSync::Stub>(SNSFollowSync::NewStub(grpc::CreateChannel(other_hb.server_ip() + ":" + other_hb.server_port(), grpc::InsecureChannelCredentials())));
+	fsyncs[reply_hb.server_id() - 1] = unique_ptr<SNSFollowSync::Stub>(SNSFollowSync::NewStub(grpc::CreateChannel(reply_hb.server_ip() + ":" + reply_hb.server_port(), grpc::InsecureChannelCredentials())));
 
 	stream->Finish();
 }
 
 void RunFollowSync(string cip, string cp) {
 	// send a heartbeat to coordinator
-	thread hbHandle(sendHeartBeat, cip, cp);
-	hbHandle.detach();
+	thread heartbeatThread(sendHeartBeat, cip, cp);
+	heartbeatThread.detach();
 
 	// connect service and start fsync
 	string server_address("localhost:" + port);
