@@ -38,7 +38,11 @@ client_startup=(
 )
 
 # run each command in a separate terminal
-for cmd in "${client_startup[@]}"; do
-# for cmd in "${commands[@]}"; do
+# for cmd in "${client_startup[@]}"; do
+# # for cmd in "${commands[@]}"; do
+#   gnome-terminal -- bash -c "$cmd; exec bash"
+# done
+
+for cmd in "${commands[@]}"; do
   gnome-terminal -- bash -c "$cmd; exec bash"
 done
