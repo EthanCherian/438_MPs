@@ -1,1 +1,4 @@
 *.txt
+.gitignore
+MP_4/*.class
+MP_4/*.jar
