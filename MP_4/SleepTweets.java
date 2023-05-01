@@ -13,7 +13,7 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class SleepTweets {
-    public static class SleepMapper extends Mapper<Object, Text, Text, IntWritable>{
+    public static class SleepMapper extends Mapper<Object, Text, Text, IntWritable> {
 
     private final static IntWritable one = new IntWritable(1);
     private Text word = new Text();
@@ -23,45 +23,39 @@ public class SleepTweets {
         String hour = "";
 
         while (itr.hasMoreTokens()) {
-          //get hour
+            //get hour
             String line = itr.nextToken();
             if (line.length() != 0 && line.charAt(0)=='T'){
-                //System.out.println(line);
                 StringTokenizer tk = new StringTokenizer(line);
                 if (tk.hasMoreTokens()) tk.nextToken();
                 if (tk.hasMoreTokens()) tk.nextToken();
                 if (tk.hasMoreTokens()){
                     String timestamp = tk.nextToken();
                     hour = timestamp.substring(0,2);
-                    //System.out.println(hour);
                 }
             }
             
-        //word.set(itr.nextToken());
-        //context.write(word, one);
-        if (itr.hasMoreTokens()) itr.nextToken();
-        if (itr.hasMoreTokens()){
-            String postLine = itr.nextToken();
-                if (postLine.length() != 0 && postLine.charAt(0)=='W'){
-                  //decide if post has sleep in it
-                    //System.out.println(postLine);
-                    StringTokenizer ptk = new StringTokenizer(postLine);
-                    if (ptk.hasMoreTokens()) ptk.nextToken();
-                    while (ptk.hasMoreTokens()){
-                        String post = ptk.nextToken();
-                        //System.out.println(post);
-                        if (post.indexOf("sleep")!= -1){
-                            //System.out.println(hour+" "+postLine);
-                            word.set(hour);
-                            context.write(word, one);
-			                break;
+            // throw away username line
+            if (itr.hasMoreTokens()) itr.nextToken();
+            if (itr.hasMoreTokens()){
+                //decide if post has sleep in it
+                String postLine = itr.nextToken();
+                    if (postLine.length() != 0 && postLine.charAt(0)=='W'){
+                        StringTokenizer ptk = new StringTokenizer(postLine);
+                        if (ptk.hasMoreTokens()) ptk.nextToken();
+                        while (ptk.hasMoreTokens()){
+                            String post = ptk.nextToken();
+                            if (post.indexOf("sleep")!= -1){
+                                word.set(hour);
+                                context.write(word, one);
+                                break;
+                            }
                         }
                     }
                 }
             }
         }
     }
-  }
 
     public static class SleepReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
         private IntWritable sumWrite = new IntWritable();
@@ -78,6 +72,7 @@ public class SleepTweets {
 
     public static void main(String[] args) throws Exception {
         Configuration conf = new Configuration();
+        conf.set("textinputformat.record.delimiter","\n\n");
         Job job = Job.getInstance(conf, "sleepy tweets per hour");
         job.setJarByClass(SleepTweets.class);
         job.setMapperClass(SleepMapper.class);
