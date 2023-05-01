@@ -22,15 +22,14 @@ public class HoursTweets {
             while (tkn.hasMoreTokens()) {
                 //get hour of day 
                 String line = tkn.nextToken();
-                if (line.length() != 0 && line.charAt(0)=='T'){
-                    // System.out.println(line);
+                if (line.length() != 0 && line.charAt(0)=='T') {
                     StringTokenizer tk = new StringTokenizer(line);
-                    if (tk.hasMoreTokens()) tk.nextToken();
-                    if (tk.hasMoreTokens()) tk.nextToken();
-                    if (tk.hasMoreTokens()){
-                        String timestamp = tk.nextToken();
-                        String aKey = timestamp.substring(0,2);
-                        word.set(aKey);
+                    if (tk.hasMoreTokens()) tk.nextToken();         // throw away 'T'
+                    if (tk.hasMoreTokens()) tk.nextToken();         // throw away "YYYY-mm-dd"
+                    if (tk.hasMoreTokens()) {
+                        String timestamp = tk.nextToken();          // first two chars of timestamp := hour of post
+                        String hour = timestamp.substring(0,2);
+                        word.set(hour);
                         context.write(word, one);
                     }
                 }

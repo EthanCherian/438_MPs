@@ -14,38 +14,36 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class SleepTweets {
     public static class SleepMapper extends Mapper<Object, Text, Text, IntWritable> {
+        private final static IntWritable one = new IntWritable(1);
+        private Text word = new Text();
 
-    private final static IntWritable one = new IntWritable(1);
-    private Text word = new Text();
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            StringTokenizer itr = new StringTokenizer(value.toString(),"\n");
+            String hour = "";
 
-    public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-        StringTokenizer itr = new StringTokenizer(value.toString(),"\n");
-        String hour = "";
-
-        while (itr.hasMoreTokens()) {
-            //get hour
-            String line = itr.nextToken();
-            if (line.length() != 0 && line.charAt(0)=='T'){
-                StringTokenizer tk = new StringTokenizer(line);
-                if (tk.hasMoreTokens()) tk.nextToken();
-                if (tk.hasMoreTokens()) tk.nextToken();
-                if (tk.hasMoreTokens()){
-                    String timestamp = tk.nextToken();
-                    hour = timestamp.substring(0,2);
+            while (itr.hasMoreTokens()) {
+                //get hour
+                String line = itr.nextToken();
+                if (line.length() != 0 && line.charAt(0)=='T'){
+                    StringTokenizer tk = new StringTokenizer(line);
+                    if (tk.hasMoreTokens()) tk.nextToken();         // throw away 'T'
+                    if (tk.hasMoreTokens()) tk.nextToken();         // throw away "YYYY-mm-dd"
+                    if (tk.hasMoreTokens()){
+                        String timestamp = tk.nextToken();          // first two chars of timestamp := hour of post
+                        hour = timestamp.substring(0,2);
+                    }
                 }
-            }
-            
-            // throw away username line
-            if (itr.hasMoreTokens()) itr.nextToken();
-            if (itr.hasMoreTokens()){
-                //decide if post has sleep in it
-                String postLine = itr.nextToken();
-                    if (postLine.length() != 0 && postLine.charAt(0)=='W'){
+                
+                if (itr.hasMoreTokens()) itr.nextToken();           // throw away username line
+                if (itr.hasMoreTokens()) {
+                    //decide if post has sleep in it
+                    String postLine = itr.nextToken();
+                    if (postLine.length() != 0 && postLine.charAt(0)=='W') {
                         StringTokenizer ptk = new StringTokenizer(postLine);
-                        if (ptk.hasMoreTokens()) ptk.nextToken();
-                        while (ptk.hasMoreTokens()){
+                        if (ptk.hasMoreTokens()) ptk.nextToken();       // throw away 'W'
+                        while (ptk.hasMoreTokens()) {
                             String post = ptk.nextToken();
-                            if (post.indexOf("sleep")!= -1){
+                            if (post.indexOf("sleep")!= -1) {       // post has sleep in it
                                 word.set(hour);
                                 context.write(word, one);
                                 break;
@@ -72,6 +70,7 @@ public class SleepTweets {
 
     public static void main(String[] args) throws Exception {
         Configuration conf = new Configuration();
+        // set delimiter such that each post is considered as a unit, rather than each line individually
         conf.set("textinputformat.record.delimiter","\n\n");
         Job job = Job.getInstance(conf, "sleepy tweets per hour");
         job.setJarByClass(SleepTweets.class);
